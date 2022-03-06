@@ -1,6 +1,6 @@
 # Typescript User Code Runner
 
-A simple way to run user code safely in Typescript.
+A simple way to safeluy run user code written in Typescript.
 
 - **Speed** - NodeJS/V8 makes JavaScript fast enough that if you have performance issues, you really should probably
   rethink your architecture and move more processing out of user code.
