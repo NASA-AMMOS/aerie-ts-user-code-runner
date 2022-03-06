@@ -174,47 +174,6 @@ abstract class UserCodeError {
   public abstract get message(): string;
   public abstract get sourceContext(): string;
   public abstract get location(): { line: number, column: number };
-}
-
-// Pretty print type errors with indicators under the offending code
-class UserCodeTypeError extends UserCodeError {
-  protected constructor(protected diagnostic: ts.Diagnostic, protected sources: Map<string, ts.SourceFile>) {
-    super();
-  }
-
-  public static new(diagnostic: ts.Diagnostic, sources: Map<string, ts.SourceFile>): UserCodeError {
-    if (diagnostic.file?.fileName === `${EXECUTION_HARNESS_FILENAME}.ts`) {
-      return new ExecutionHarnessTypeError(diagnostic, sources);
-    }
-    return new UserCodeTypeError(diagnostic, sources);
-  }
-
-  public toString(): string {
-    return 'TypeError: ' + this.message + '\n' + this.sourceContext;
-  }
-
-
-  public get message(): string {
-    return ts.flattenDiagnosticMessageText(this.diagnostic.messageText, '\n');
-  }
-
-  public get sourceContext(): string {
-    const start = this.diagnostic.start!;
-    const end = this.diagnostic.start! + this.diagnostic.length!;
-    return UserCodeTypeError.underlineRanges(this.sources.get(`${USER_FILE_ALIAS}.ts`)!, [[start, end]]);
-  }
-
-  public get location(): { line: number, column: number } {
-    if (this.diagnostic.start === undefined) {
-      throw new Error('Could not find start position');
-    }
-    const location = this.sources.get(`${USER_FILE_ALIAS}.ts`)!.getLineAndCharacterOfPosition(this.diagnostic.start)
-    return {
-      line: location.line,
-      column: location.character,
-    }
-  }
-
   protected static underlineNodes(file: ts.SourceFile, nodes: ts.Node[], contextLines: number = 1) {
 
     const lines = file.text.split('\n');
@@ -293,6 +252,45 @@ class UserCodeTypeError extends UserCodeError {
   }
 }
 
+// Pretty print type errors with indicators under the offending code
+class UserCodeTypeError extends UserCodeError {
+  protected constructor(protected diagnostic: ts.Diagnostic, protected sources: Map<string, ts.SourceFile>) {
+    super();
+  }
+
+  public static new(diagnostic: ts.Diagnostic, sources: Map<string, ts.SourceFile>): UserCodeError {
+    if (diagnostic.file?.fileName === `${EXECUTION_HARNESS_FILENAME}.ts`) {
+      return new ExecutionHarnessTypeError(diagnostic, sources);
+    }
+    return new UserCodeTypeError(diagnostic, sources);
+  }
+
+  public toString(): string {
+    return 'TypeError: ' + this.message + '\n' + this.sourceContext;
+  }
+
+
+  public get message(): string {
+    return ts.flattenDiagnosticMessageText(this.diagnostic.messageText, '\n');
+  }
+
+  public get sourceContext(): string {
+    const start = this.diagnostic.start!;
+    const end = this.diagnostic.start! + this.diagnostic.length!;
+    return UserCodeTypeError.underlineRanges(this.sources.get(`${USER_FILE_ALIAS}.ts`)!, [[start, end]]);
+  }
+  public get location(): { line: number, column: number } {
+    if (this.diagnostic.start === undefined) {
+      throw new Error('Could not find start position');
+    }
+    const location = this.sources.get(`${USER_FILE_ALIAS}.ts`)!.getLineAndCharacterOfPosition(this.diagnostic.start)
+    return {
+      line: location.line,
+      column: location.character,
+    }
+  }
+}
+
 // Pretty print runtime errors with lines numbers
 class UserCodeRuntimeError extends UserCodeError {
   private readonly error: Error;
@@ -356,7 +354,6 @@ class UserCodeRuntimeError extends UserCodeError {
       column: stack[0].getColumnNumber(),
     }
   }
-
 }
 
 // Redirect the execution harness errors to the user code type signature
