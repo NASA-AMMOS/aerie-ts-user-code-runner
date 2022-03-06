@@ -1,4 +1,4 @@
-import {executeDSL} from "./DSLRunner.js";
+import {executeUserCode} from "./UserCodeRunner";
 import {installStringUtils} from "./utils/stringUtils";
 installStringUtils();
 
@@ -14,21 +14,12 @@ it('should produce runtime errors', async () => {
     }
     `.trimTemplate();
 
-  const DSLCode = `
-    declare global {
-      type DSLReturnType = string;
-      type DSLArgsType = [string];
-    }
-    `.trimTemplate();
-
-
-  const result = await executeDSL(
+  const result = await executeUserCode(
     userCode,
     `userCode`,
-    DSLCode,
     ['hello'],
-    'DSLReturnType',
-    'DSLArgsType',
+    'string',
+    ['string'],
   );
 
   expect(result.isErr()).toBeTruthy();
@@ -56,22 +47,12 @@ it('should produce return type errors', async () => {
     }
     `.trimTemplate();
 
-
-  const DSLCode = `
-    declare global {
-      type DSLReturnType = number;
-      type DSLArgsType = [string];
-    }
-    `.trimTemplate();
-
-
-  const result = await executeDSL(
+  const result = await executeUserCode(
     userCode,
     `userCode`,
-    DSLCode,
     ['hello'],
-    'DSLReturnType',
-    'DSLArgsType',
+    'number',
+    ['string'],
   );
 
   expect(result.isErr()).toBeTruthy();
@@ -96,30 +77,46 @@ it('should produce input type errors', async () => {
     
     `.trimTemplate();
 
-
-  const DSLCode = `
-    declare global {
-      type DSLReturnType = number;
-      type DSLArgsType = [[string]];
-    }
-    `.trimTemplate();
-
-
-  const result = await executeDSL(
+  const result = await executeUserCode(
     userCode,
     `userCode`,
-    DSLCode,
     ['hello'],
-    'DSLReturnType',
-    'DSLArgsType',
+    'string',
+    ['string'],
   );
 
   expect(result.isErr()).toBeTruthy();
-  expect(result.unwrapErr()[0].message).toBe('Incorrect return type. Expected: \'number\', Actual: \'string\'.');
+  expect(result.unwrapErr()[0].message).toBe("Incorrect number of arguments. Expected: '1', Actual: '2'.");
   expect(result.unwrapErr()[0].sourceContext).toBe(`
     >1| export default function MyDSLFunction(thing: string, other: thing): string {
-                                                                            ^^^^^^
+                                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
      2|   subroutine();
+    `.trimTemplate());
+});
+
+it('should produce internal type errors', async () => {
+  const userCode = `
+    export default function MyDSLFunction(thing: string): number {
+      const other: number = 'hello';
+      return thing + ' world';
+    }
+    `.trimTemplate();
+
+  const result = await executeUserCode(
+    userCode,
+    `userCode`,
+    ['hello'],
+    'number',
+    ['string'],
+  );
+
+  expect(result.isErr()).toBeTruthy();
+  expect(result.unwrapErr()[0].message).toBe("Type 'string' is not assignable to type 'number'.");
+  expect(result.unwrapErr()[0].sourceContext).toBe(`
+     1| export default function MyDSLFunction(thing: string): number {
+    >2|   const other: number = 'hello';
+                ^^^^^
+     3|   return thing + ' world';
     `.trimTemplate());
 });
 
@@ -128,27 +125,14 @@ it('should return the final value', async () => {
     export default function MyDSLFunction(thing: string): string {
       return thing + ' world';
     }
-    
-    function subroutine() {
-      throw new Error('This is a test error');
-    }
     `.trimTemplate();
 
-  const DSLCode = `
-    declare global {
-      type DSLReturnType = string;
-      type DSLArgsType = [string];
-    }
-    `.trimTemplate();
-
-
-  const result = await executeDSL(
+  const result = await executeUserCode(
     userCode,
     `userCode`,
-    DSLCode,
     ['hello'],
-    'DSLReturnType',
-    'DSLArgsType',
+    'string',
+    ['string'],
   );
 
   expect(result.isOk()).toBeTruthy();

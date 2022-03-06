@@ -47,33 +47,32 @@ declare module 'vm' {
 
 }
 
-export async function executeDSL<ArgsType extends any[], ReturnType = any>(
+export async function executeUserCode<ArgsType extends any[], ReturnType = any>(
   userCode: string,
   userCodeFileName: string,
-  dslCode: string,
   args: ArgsType,
   outputType: string = 'any',
-  argsType: string = 'any[]',
+  argsTypes: string[] = ['any'],
+  systemCode: string = '',
   context: vm.Context = vm.createContext(),
   timeout: number = 5000,
-): Promise<Result<ReturnType, DSLError[]>> {
+): Promise<Result<ReturnType, UserCodeError[]>> {
 
   // Typecheck and transpile code
   const userSourceFile = ts.createSourceFile(userCodeFileName, userCode, ts.ScriptTarget.ESNext, undefined, ts.ScriptKind.TS);
 
-  const dslSourceFile = ts.createSourceFile('dsl', dslCode, ts.ScriptTarget.ESNext, undefined, ts.ScriptKind.TS);
-
   const executionCode =  `
     import defaultExport from '${USER_FILE_ALIAS}';
     
-    ${dslCode}
+    ${systemCode}
     
     declare global {
-      const args: ${argsType};
+      const args: [${argsTypes.join(', ')}];
       let result: ${outputType};
     }
     result = defaultExport(...args);
   `;
+  console.log(executionCode)
   const executionSourceFile = ts.createSourceFile(EXECUTION_HARNESS_FILENAME, executionCode, ts.ScriptTarget.ESNext, undefined, ts.ScriptKind.TS);
 
   const tsFileCache = new Map<string, ts.SourceFile>();
@@ -117,10 +116,10 @@ export async function executeDSL<ArgsType extends any[], ReturnType = any>(
     sourceMap: true,
   }, customCompilerHost);
 
-  const sourceErrors: DSLError[] = [];
+  const sourceErrors: UserCodeError[] = [];
   ts.getPreEmitDiagnostics(program).forEach(diagnostic => {
     if (diagnostic.file) {
-      sourceErrors.push(DSLTypeError.new(diagnostic, tsFileCache));
+      sourceErrors.push(UserCodeTypeError.new(diagnostic, tsFileCache));
     }
   });
 
@@ -130,7 +129,7 @@ export async function executeDSL<ArgsType extends any[], ReturnType = any>(
 
   for (const diagnostic of emitResult.diagnostics) {
     if (diagnostic.file) {
-      sourceErrors.push(DSLTypeError.new(diagnostic, tsFileCache));
+      sourceErrors.push(UserCodeTypeError.new(diagnostic, tsFileCache));
     }
   }
 
@@ -167,28 +166,28 @@ export async function executeDSL<ArgsType extends any[], ReturnType = any>(
     });
     return Result.Ok(context.result);
   } catch (error: any) {
-    return Result.Err([DSLRuntimeError.new(error as Error, sourceMap, tsFileCache)]);
+    return Result.Err([UserCodeRuntimeError.new(error as Error, sourceMap, tsFileCache)]);
   }
 }
 
 // Base error type for the DSLRunner
-abstract class DSLError {
+abstract class UserCodeError {
   public abstract get message(): string;
   public abstract get sourceContext(): string;
   public abstract get location(): { line: number, column: number };
 }
 
 // Pretty print type errors with indicators under the offending code
-class DSLTypeError extends DSLError {
+class UserCodeTypeError extends UserCodeError {
   protected constructor(protected diagnostic: ts.Diagnostic, protected sources: Map<string, ts.SourceFile>) {
     super();
   }
 
-  public static new(diagnostic: ts.Diagnostic, sources: Map<string, ts.SourceFile>): DSLError {
+  public static new(diagnostic: ts.Diagnostic, sources: Map<string, ts.SourceFile>): UserCodeError {
     if (diagnostic.file?.fileName === `${EXECUTION_HARNESS_FILENAME}.ts`) {
       return new ExecutionHarnessTypeError(diagnostic, sources);
     }
-    return new DSLTypeError(diagnostic, sources);
+    return new UserCodeTypeError(diagnostic, sources);
   }
 
   public toString(): string {
@@ -201,73 +200,9 @@ class DSLTypeError extends DSLError {
   }
 
   public get sourceContext(): string {
-    let errorMessage = '';
-
-    if (outputsErrorRegex.test(this.message)) {
-      const userFile = this.sources.get(`${USER_FILE_ALIAS}.ts`)!;
-      const defaultExportedFunctionNode = userFile
-        .getChildren()[0]
-        .getChildren()
-        .find(node0 => (
-          node0.kind === ts.SyntaxKind.FunctionDeclaration
-          && node0.getChildren().some(node1 => (
-            node1.kind === ts.SyntaxKind.SyntaxList
-            && node1.getChildren().some(node2 => node2.kind === ts.SyntaxKind.ExportKeyword)
-            && node1.getChildren().some(node2 => node2.kind === ts.SyntaxKind.DefaultKeyword)
-          ))
-        ));
-
-      if (defaultExportedFunctionNode === undefined) {
-        throw new Error('Could not find default exported function');
-      }
-
-      let returnTypeNode: ts.Node | null = null;
-      let lastNode: ts.Node | null = null;
-      for (const child1 of defaultExportedFunctionNode.getChildren()) {
-        if (
-          child1.kind === ts.SyntaxKind.CloseParenToken
-        ) {
-          lastNode = child1;
-        } else if (
-          child1.kind === ts.SyntaxKind.ColonToken
-          && lastNode?.kind === ts.SyntaxKind.CloseParenToken
-        ) {
-          lastNode = child1;
-        } else if (
-          lastNode?.kind === ts.SyntaxKind.ColonToken
-        ) {
-          returnTypeNode = child1;
-          break;
-        }
-      }
-
-      if (returnTypeNode === null) {
-        throw new Error('Could not find return type node');
-      }
-
-      let returnStatementNode: ts.Node | null = null;
-      for (const child1 of defaultExportedFunctionNode.getChildren()) {
-        if (child1.kind === ts.SyntaxKind.Block) {
-          for (const child2 of child1.getChildren()) {
-            if (child2.kind === ts.SyntaxKind.SyntaxList) {
-              for (const child3 of child2.getChildren()) {
-                if (child3.kind === ts.SyntaxKind.ReturnStatement) {
-                  returnStatementNode = child3;
-                  break;
-                }
-              }
-            }
-          }
-        }
-      }
-
-      if (returnStatementNode === null) {
-        throw new Error('Could not find return statement');
-      }
-
-      return DSLTypeError.underlineNodes(userFile, [returnTypeNode, returnStatementNode]);
-    }
-    return errorMessage;
+    const start = this.diagnostic.start!;
+    const end = this.diagnostic.start! + this.diagnostic.length!;
+    return UserCodeTypeError.underlineRanges(this.sources.get(`${USER_FILE_ALIAS}.ts`)!, [[start, end]]);
   }
 
   public get location(): { line: number, column: number } {
@@ -319,10 +254,48 @@ class DSLTypeError extends DSLError {
 
     return [...lineMap.values()].join('\n');
   }
+  protected static underlineRanges(file: ts.SourceFile, ranges: [number, number][], contextLines: number = 1) {
+
+    const lines = file.text.split('\n');
+
+    const linesToDisplay = [...ranges.reduce((accum, item) => {
+      const line = file.getLineAndCharacterOfPosition(item[0]).line;
+      const startLineIndex = Math.max(0, line - contextLines);
+      const endLineIndex = Math.min(lines.length, line + contextLines);
+      for (let i = startLineIndex; i <= endLineIndex; i++) {
+        accum.add(i);
+      }
+      return accum;
+    }, new Set<number>())];
+
+    const maxLineNumberLength = Math.max(...linesToDisplay).toString().length;
+
+    const lineMap = new Map<number, string>();
+    for (const [index, line] of linesToDisplay.entries()) {
+      if (!lineMap.has(line)) {
+        lineMap.set(line, ' ' + (line + 1).toString().padStart(maxLineNumberLength, ' ') + '| ' + lines[line]);
+        if (line !== linesToDisplay[index - 1] + 1 && index !== 0) {
+          lineMap.set(line - 1, '⋮'.padStart(maxLineNumberLength, ' '));
+        }
+      }
+
+    }
+
+    for (const range of ranges) {
+      const {line, character} = file.getLineAndCharacterOfPosition(range[0])
+      const tokenLength = range[1] - range[0];
+      if (lineMap.has(line)) {
+        const lineText = lineMap.get(line)!;
+        lineMap.set(line, '>' + lineText.slice(1) + '\n' + ' '.repeat(character + line.toString().length + maxLineNumberLength + 2) + '^'.repeat(tokenLength));
+      }
+    }
+
+    return [...lineMap.values()].join('\n');
+  }
 }
 
 // Pretty print runtime errors with lines numbers
-class DSLRuntimeError extends DSLError {
+class UserCodeRuntimeError extends UserCodeError {
   private readonly error: Error;
   private readonly sourceMap: SourceMapConsumer;
   private readonly tsFileCache: Map<string, ts.SourceFile>;
@@ -333,8 +306,8 @@ class DSLRuntimeError extends DSLError {
     this.tsFileCache = tsFileCache;
   }
 
-  public static new(error: Error, sourceMap: SourceMapConsumer, tsFileCache: Map<string, ts.SourceFile>): DSLRuntimeError {
-    return new DSLRuntimeError(error, sourceMap, tsFileCache);
+  public static new(error: Error, sourceMap: SourceMapConsumer, tsFileCache: Map<string, ts.SourceFile>): UserCodeRuntimeError {
+    return new UserCodeRuntimeError(error, sourceMap, tsFileCache);
   }
 
   public get message(): string {
@@ -388,7 +361,7 @@ class DSLRuntimeError extends DSLError {
 }
 
 // Redirect the execution harness errors to the user code type signature
-class ExecutionHarnessTypeError extends DSLTypeError {
+class ExecutionHarnessTypeError extends UserCodeTypeError {
   public get message(): string {
     let errorMessage = '';
 
@@ -455,7 +428,7 @@ class ExecutionHarnessTypeError extends DSLTypeError {
         throw new Error('Could not find return type node');
       }
 
-      return DSLTypeError.underlineNodes(userFile, [returnTypeNode]);
+      return UserCodeTypeError.underlineNodes(userFile, [returnTypeNode]);
     } else if (argumentsErrorRegex.test(flatMessage) || tooManyArgs.test(flatMessage)) {
       const defaultExportedFunctionNode = userFile
         .getChildren()[0]
@@ -491,7 +464,7 @@ class ExecutionHarnessTypeError extends DSLTypeError {
         throw new Error('Could not find parameter type node');
       }
 
-      return DSLTypeError.underlineNodes(userFile, [parameterTypeNode]);
+      return UserCodeTypeError.underlineNodes(userFile, [parameterTypeNode]);
     }
 
     return '';
