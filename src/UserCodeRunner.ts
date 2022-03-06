@@ -72,7 +72,6 @@ export async function executeUserCode<ArgsType extends any[], ReturnType = any>(
     }
     result = defaultExport(...args);
   `;
-  console.log(executionCode)
   const executionSourceFile = ts.createSourceFile(EXECUTION_HARNESS_FILENAME, executionCode, ts.ScriptTarget.ESNext, undefined, ts.ScriptKind.TS);
 
   const tsFileCache = new Map<string, ts.SourceFile>();
