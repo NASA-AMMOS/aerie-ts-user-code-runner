@@ -53,7 +53,6 @@ export async function executeUserCode<ArgsType extends any[], ReturnType = any>(
   args: ArgsType,
   outputType: string = 'any',
   argsTypes: string[] = ['any'],
-  systemCode: string = '',
   context: vm.Context = vm.createContext(),
   timeout: number = 5000,
 ): Promise<Result<ReturnType, UserCodeError[]>> {
@@ -63,8 +62,6 @@ export async function executeUserCode<ArgsType extends any[], ReturnType = any>(
 
   const executionCode =  `
     import defaultExport from '${USER_FILE_ALIAS}';
-    
-    ${systemCode}
     
     declare global {
       const args: [${argsTypes.join(', ')}];

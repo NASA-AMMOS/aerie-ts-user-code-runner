@@ -5,7 +5,7 @@ A simple way to safeluy run user code written in Typescript.
 - **Speed** - NodeJS/V8 makes JavaScript fast enough that if you have performance issues, you really should probably
   rethink your architecture and move more processing out of user code.
 - **Isolation** - NodeJS exposes the internal VM of V8, which allows us to create new V8 isolates for each user code run.
-  This means you bad user code will not crash your system and won't have access to anything you don't explicitly expose.
+  This means that bad user code will not crash your system and won't have access to anything you don't explicitly expose.
 - **Execution Limits** - V8 isolates enable setting a timeout on the executing code, so users can't hang your system.
 - **Simple User API** - User code just needs to export a default function that takes any arguments you want to give it,
   and returns anything you want back from it.
@@ -64,4 +64,18 @@ Error: This is a test error
  6| function subroutine() {
 >7|   throw new Error('This is a test error');
  8| }
+```
+
+
+## API
+```ts
+async function executeUserCode<ArgsType extends any[], ReturnType = any>(
+  userCode: string, // User code as a string
+  userCodeFileName: string, // Filename for stack traces
+  args: ArgsType, // Input arguments
+  outputType: string = 'any', // Return type for typechecking
+  argsTypes: string[] = ['any'], // Argument types for typechecking
+  context: vm.Context = vm.createContext(), // vm.Context to carry state between user code runs and inject globals
+  timeout: number = 5000, // Timeout in milliseconds
+): Promise<Result<ReturnType, UserCodeError[]>>
 ```
