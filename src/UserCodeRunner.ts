@@ -3,17 +3,12 @@ import ts from 'typescript';
 import path from 'path';
 import {SourceMapConsumer} from 'source-map';
 import {Result} from './utils/monads.js';
-import {displaySourceLineWithContext} from './utils/displaySourceLineWithContext.js';
 import {parse} from 'stack-trace';
-import {indent} from "./utils/stringUtils.js";
 
 const EXECUTION_HARNESS_FILENAME = '__execution_harness';
 const USER_FILE_ALIAS = '__user_file';
 
-const outputsErrorRegex = new RegExp(`Type '(.*)' is not assignable to type '(.*)'.`);
-const argumentsErrorRegex = new RegExp(`Argument of type '(.*)' is not assignable to parameter of type '(.*)'.`);
-const tooManyArgs = new RegExp(`Expected (\\d+) arguments, but got (\\d+).`);
-
+// Fill in the missing module vm types
 declare module 'vm' {
 
   export class Module {
@@ -168,45 +163,11 @@ export async function executeUserCode<ArgsType extends any[], ReturnType = any>(
 // Base error type for the DSLRunner
 abstract class UserCodeError {
   public abstract get message(): string;
+  public abstract get stack(): string;
   public abstract get sourceContext(): string;
   public abstract get location(): { line: number, column: number };
   protected static underlineNodes(file: ts.SourceFile, nodes: ts.Node[], contextLines: number = 1) {
-
-    const lines = file.text.split('\n');
-
-    const linesToDisplay = [...nodes.reduce((accum, item) => {
-      const line = file.getLineAndCharacterOfPosition(item.getStart()).line;
-      const startLineIndex = Math.max(0, line - contextLines);
-      const endLineIndex = Math.min(lines.length, line + contextLines);
-      for (let i = startLineIndex; i <= endLineIndex; i++) {
-        accum.add(i);
-      }
-      return accum;
-    }, new Set<number>())];
-
-    const maxLineNumberLength = Math.max(...linesToDisplay).toString().length;
-
-    const lineMap = new Map<number, string>();
-    for (const [index, line] of linesToDisplay.entries()) {
-      if (!lineMap.has(line)) {
-        lineMap.set(line, ' ' + (line + 1).toString().padStart(maxLineNumberLength, ' ') + '| ' + lines[line]);
-        if (line !== linesToDisplay[index - 1] + 1 && index !== 0) {
-          lineMap.set(line - 1, '⋮'.padStart(maxLineNumberLength, ' '));
-        }
-      }
-
-    }
-
-    for (const node of nodes) {
-      const {line, character} = file.getLineAndCharacterOfPosition(node!.getStart())
-      const tokenLength = node!.getEnd() - node!.getStart();
-      if (lineMap.has(line)) {
-        const lineText = lineMap.get(line)!;
-        lineMap.set(line, '>' + lineText.slice(1) + '\n' + ' '.repeat(character + line.toString().length + maxLineNumberLength + 2) + '^'.repeat(tokenLength));
-      }
-    }
-
-    return [...lineMap.values()].join('\n');
+    return UserCodeError.underlineRanges(file, nodes.map(node => [node.getStart(), node.getEnd()]), contextLines);
   }
   protected static underlineRanges(file: ts.SourceFile, ranges: [number, number][], contextLines: number = 1) {
 
@@ -232,7 +193,6 @@ abstract class UserCodeError {
           lineMap.set(line - 1, '⋮'.padStart(maxLineNumberLength, ' '));
         }
       }
-
     }
 
     for (const range of ranges) {
@@ -240,11 +200,50 @@ abstract class UserCodeError {
       const tokenLength = range[1] - range[0];
       if (lineMap.has(line)) {
         const lineText = lineMap.get(line)!;
-        lineMap.set(line, '>' + lineText.slice(1) + '\n' + ' '.repeat(character + line.toString().length + maxLineNumberLength + 2) + '^'.repeat(tokenLength));
+        lineMap.set(line, '>' + lineText.slice(1) + '\n' + ' '.repeat(character + line.toString().length + maxLineNumberLength + 2) + '~'.repeat(tokenLength));
       }
     }
 
     return [...lineMap.values()].join('\n');
+  }
+  protected static displayLineWithContext(sourceCode: string, lineNumber: number, context: number = 1): string {
+    const lines = sourceCode.split('\n');
+    const start = Math.max(0, lineNumber - 1 - context);
+    const end = Math.min(lines.length, lineNumber - 1 + context);
+
+    const lineNumbers = lines.slice(start, end + 1).map((l, i) => i);
+
+    const maxLineNumberLength = Math.max(...lineNumbers).toString().length;
+
+    return lines.slice(start, end + 1).map((l, i) => {
+      const isCurrentLine = i === (lineNumber - 1) - start;
+      return (isCurrentLine ? '>' : ' ') + (i + start + 1).toString().padStart(maxLineNumberLength, ' ') + '| ' + l;
+    }).join('\n');
+  }
+  protected static getDescendentNodeOfType(node: ts.Node, nodeKind: ts.SyntaxKind): ts.Node | null {
+    if (node.kind === nodeKind) {
+      return node;
+    }
+    for (const child1 of node.getChildren()) {
+      const result = UserCodeError.getDescendentNodeOfType(child1, nodeKind);
+      if (result !== null) {
+        return result;
+      }
+    }
+    return null;
+  }
+  protected static getDescendentAtPosition(node: ts.Node, position: number): ts.Node | null {
+    for (const child1 of node.getChildren()) {
+      if (child1.getStart() <= position && position <= child1.getEnd()) {
+        return UserCodeError.getDescendentAtPosition(child1, position);
+      }
+    }
+    const start = node.getStart();
+    const end = node.getEnd();
+    if (start <= position && position <= end) {
+      return node;
+    }
+    return null;
   }
 }
 
@@ -261,13 +260,21 @@ class UserCodeTypeError extends UserCodeError {
     return new UserCodeTypeError(diagnostic, sources);
   }
 
-  public toString(): string {
-    return 'TypeError: ' + this.message + '\n' + this.sourceContext;
+  public get message(): string {
+    return 'TypeError: ' + ts.flattenDiagnosticMessageText(this.diagnostic.messageText, '\n');
   }
 
+  public get stack(): string {
+    const userFile = this.sources.get(`${USER_FILE_ALIAS}.ts`)!;
+    const diagnosticNode = UserCodeError.getDescendentAtPosition(userFile, this.diagnostic.start!);
+    if (diagnosticNode === null) {
+      throw new Error(`Could not find node for diagnostic ${this.diagnostic.messageText}`);
+    }
+    const functionDeclaration = ts.findAncestor(diagnosticNode, (node) => {
+      return node.kind === ts.SyntaxKind.FunctionDeclaration;
+    }) as ts.FunctionDeclaration;
 
-  public get message(): string {
-    return ts.flattenDiagnosticMessageText(this.diagnostic.messageText, '\n');
+    return 'at ' + functionDeclaration.name?.text + '(' + this.location.line + ':' + this.location.column + ')';
   }
 
   public get sourceContext(): string {
@@ -275,6 +282,7 @@ class UserCodeTypeError extends UserCodeError {
     const end = this.diagnostic.start! + this.diagnostic.length!;
     return UserCodeTypeError.underlineRanges(this.sources.get(`${USER_FILE_ALIAS}.ts`)!, [[start, end]]);
   }
+
   public get location(): { line: number, column: number } {
     if (this.diagnostic.start === undefined) {
       throw new Error('Could not find start position');
@@ -304,9 +312,13 @@ class UserCodeRuntimeError extends UserCodeError {
   }
 
   public get message(): string {
+    return 'Error: ' + this.error.message;
+  }
 
+  public get stack(): string {
     const stack = parse(this.error);
-    const stackWithoutHarness = stack.filter(callsite => callsite.getFileName()?.endsWith(`${USER_FILE_ALIAS}.js`))
+    const stackWithoutHarness = stack
+      .filter(callsite => callsite.getFileName()?.endsWith(`${USER_FILE_ALIAS}.js`))
       .filter(callsite => {
         if (callsite.getFileName() === undefined) {
           return false;
@@ -317,7 +329,7 @@ class UserCodeRuntimeError extends UserCodeError {
         });
         return mappedLocation.line !== null;
       });
-    const stackMessage = stackWithoutHarness
+    return stackWithoutHarness
       .map(callsite => {
         const mappedLocation = this.sourceMap.originalPositionFor({
           line: callsite.getLineNumber()!,
@@ -326,139 +338,131 @@ class UserCodeRuntimeError extends UserCodeError {
         const functionName = callsite.getFunctionName();
         const lineNumber = mappedLocation.line;
         const columnNumber = mappedLocation.column;
-        return indent('at ' + functionName + '(' +  lineNumber + ':' + columnNumber + ')');
+        return 'at ' + functionName + '(' +  lineNumber + ':' + columnNumber + ')';
       })
       .join('\n');
-
-    let errorMessage = this.error.name + ': ';
-    errorMessage += this.error.message + '\n' + stackMessage;
-    return errorMessage;
   }
 
   public get sourceContext(): string {
-    const stack = parse(this.error);
-    return displaySourceLineWithContext(this.tsFileCache.get(`${USER_FILE_ALIAS}.ts`)!.text, this.sourceMap.originalPositionFor({
-      line: stack[0].getLineNumber()!,
-      column: stack[0].getColumnNumber()!
-    }).line!);
+    return UserCodeRuntimeError.displayLineWithContext(this.tsFileCache.get(`${USER_FILE_ALIAS}.ts`)!.text, this.location.line);
   }
 
   public get location(): { line: number, column: number } {
     const stack = parse(this.error);
+    const originalPosition = this.sourceMap.originalPositionFor({
+      line: stack[0].getLineNumber()!,
+      column: stack[0].getColumnNumber()!
+    });
     return {
-      line: stack[0].getLineNumber(),
-      column: stack[0].getColumnNumber(),
+      line: originalPosition.line!,
+      column: originalPosition.column!,
     }
   }
 }
 
 // Redirect the execution harness errors to the user code type signature
 class ExecutionHarnessTypeError extends UserCodeTypeError {
-  public get message(): string {
-    let errorMessage = '';
 
-    const flatMessage = ts.flattenDiagnosticMessageText(this.diagnostic.messageText, '\n');
-    if (outputsErrorRegex.test(flatMessage)) {
-      const match = flatMessage.match(outputsErrorRegex)!;
-      errorMessage += `Incorrect return type. Expected: '${match[2]}', Actual: '${match[1]}'.`;
-    } else if (argumentsErrorRegex.test(flatMessage)) {
-      const match = flatMessage.match(argumentsErrorRegex)!;
-      errorMessage += `Incorrect argument type. Expected: '${match[1]}', Actual: '${match[2]}'.`;
-    } else if (tooManyArgs.test(flatMessage)) {
-      const match = flatMessage.match(tooManyArgs)!;
-      errorMessage += `Incorrect number of arguments. Expected: '${match[2]}', Actual: '${match[1]}'.`;
+  constructor(protected diagnostic: ts.Diagnostic, protected sources: Map<string, ts.SourceFile>) {
+    super(diagnostic, sources);
+    const diagnosticNode = UserCodeError.getDescendentAtPosition(sources.get(`${EXECUTION_HARNESS_FILENAME}.ts`)!, this.diagnostic.start!);
+    // Get out diagnostic node and check if its our result or our defaultFunction call to map correctly back to user code file
+    if (diagnosticNode === this.executionHarnessResultNode) {
+      this.diagnostic.file = this.sources.get(`${USER_FILE_ALIAS}.ts`)!;
+      this.diagnostic.start = this.defaultExportedFunctionNode.type!.getStart();
+      this.diagnostic.length = this.defaultExportedFunctionNode.type!.getEnd() - this.defaultExportedFunctionNode.type!.getStart();
+      this.diagnostic.messageText = `Incorrect return type. Expected: '${this.outputTypeNode.getText()}', Actual: '${this.defaultExportedFunctionNode.type!.getText()}'.`;
+    } else if (diagnosticNode === this.executionHarnessDefaultFunctionIdentifierNode) {
+      this.diagnostic.file = this.sources.get(`${USER_FILE_ALIAS}.ts`)!;
+      const parameters = this.defaultExportedFunctionNode.parameters;
+      this.diagnostic.start = Math.min(...parameters.map(p => p.getStart()));
+      this.diagnostic.length = Math.max(...parameters.map(p => p.getEnd())) - this.diagnostic.start;
+      this.diagnostic.messageText = `Incorrect argument type. Expected: '${this.argumentTypeNode.getText()}', Actual: '[${parameters.map(s => s.type?.getText()).join(', ')}]'.`;
     } else {
-      errorMessage += flatMessage;
+      throw new Error('Unmapped execution harness error');
     }
-    return errorMessage;
   }
 
-  get sourceContext(): string {
+  public get stack(): string {
+    return 'at ' + this.defaultExportedFunctionNode.name!.getText() + '(' + this.location.line + ':' + this.location.column + ')';
+  }
 
+  public get sourceContext(): string {
     const userFile = this.sources.get(`${USER_FILE_ALIAS}.ts`)!;
+    const diagnosticNode = UserCodeError.getDescendentAtPosition(this.sources.get(`${EXECUTION_HARNESS_FILENAME}.ts`)!, this.diagnostic.start!);
 
-    const flatMessage = ts.flattenDiagnosticMessageText(this.diagnostic.messageText, '\n');
-
-    if (outputsErrorRegex.test(flatMessage)) {
-      const defaultExportedFunctionNode = userFile
-        .getChildren()[0]
-        .getChildren()
-        .find(node0 => (
-          node0.kind === ts.SyntaxKind.FunctionDeclaration
-          && node0.getChildren().some(node1 => (
-            node1.kind === ts.SyntaxKind.SyntaxList
-            && node1.getChildren().some(node2 => node2.kind === ts.SyntaxKind.ExportKeyword)
-            && node1.getChildren().some(node2 => node2.kind === ts.SyntaxKind.DefaultKeyword)
-          ))
-        ));
-
-      if (defaultExportedFunctionNode === undefined) {
-        throw new Error('Could not find default exported function');
-      }
-
-      let returnTypeNode: ts.Node | null = null;
-      let lastNode: ts.Node | null = null;
-      for (const child1 of defaultExportedFunctionNode.getChildren()) {
-        if (
-          child1.kind === ts.SyntaxKind.CloseParenToken
-        ) {
-          lastNode = child1;
-        } else if (
-          child1.kind === ts.SyntaxKind.ColonToken
-          && lastNode?.kind === ts.SyntaxKind.CloseParenToken
-        ) {
-          lastNode = child1;
-        } else if (
-          lastNode?.kind === ts.SyntaxKind.ColonToken
-        ) {
-          returnTypeNode = child1;
-          break;
-        }
-      }
-
-      if (returnTypeNode === null) {
-        throw new Error('Could not find return type node');
-      }
-
-      return UserCodeTypeError.underlineNodes(userFile, [returnTypeNode]);
-    } else if (argumentsErrorRegex.test(flatMessage) || tooManyArgs.test(flatMessage)) {
-      const defaultExportedFunctionNode = userFile
-        .getChildren()[0]
-        .getChildren()
-        .find(node0 => (
-          node0.kind === ts.SyntaxKind.FunctionDeclaration
-          && node0.getChildren().some(node1 => (
-            node1.kind === ts.SyntaxKind.SyntaxList
-            && node1.getChildren().some(node2 => node2.kind === ts.SyntaxKind.ExportKeyword)
-            && node1.getChildren().some(node2 => node2.kind === ts.SyntaxKind.DefaultKeyword)
-          ))
-        ));
-
-      if (defaultExportedFunctionNode === undefined) {
-        throw new Error('Could not find default exported function');
-      }
-
-      let parameterTypeNode: ts.Node | null = null;
-      let lastNode: ts.Node | null = null;
-      for (const child1 of defaultExportedFunctionNode.getChildren()) {
-        if (child1.kind === ts.SyntaxKind.OpenParenToken) {
-          lastNode = child1;
-        } else if (
-          lastNode?.kind === ts.SyntaxKind.OpenParenToken
-          && child1.kind === ts.SyntaxKind.SyntaxList
-        ) {
-          parameterTypeNode = child1;
-          break;
-        }
-      }
-
-      if (parameterTypeNode === null) {
-        throw new Error('Could not find parameter type node');
-      }
-
-      return UserCodeTypeError.underlineNodes(userFile, [parameterTypeNode]);
+    if (diagnosticNode === this.executionHarnessResultNode) {
+      return UserCodeTypeError.underlineNodes(userFile, [this.defaultExportedFunctionNode.type!]);
+    } else if (diagnosticNode === this.executionHarnessDefaultFunctionIdentifierNode) {
+      return UserCodeTypeError.underlineNodes(userFile, [...this.defaultExportedFunctionNode.parameters]);
     }
 
-    return '';
+    return super.sourceContext;
   }
+
+  public get location(): { line: number, column: number } {
+
+    const location = this.sources.get(`${USER_FILE_ALIAS}.ts`)!.getLineAndCharacterOfPosition(this.diagnostic.start!)
+    return {
+      line: location.line,
+      column: location.character,
+    }
+  }
+
+  protected get defaultExportedFunctionNode(): ts.FunctionDeclaration {
+    const userFile = this.sources.get(`${USER_FILE_ALIAS}.ts`)!;
+    return userFile.statements.find(s => (
+      s.kind === ts.SyntaxKind.FunctionDeclaration
+      && s.modifiers?.some(m => m.kind === ts.SyntaxKind.ExportKeyword)
+      && s.modifiers?.some(m => m.kind === ts.SyntaxKind.DefaultKeyword)
+    ))! as ts.FunctionDeclaration;
+  }
+
+  protected get executionHarnessResultNode(): ts.Identifier {
+    const executionHarness = this.sources.get(`${EXECUTION_HARNESS_FILENAME}.ts`)!;
+    const assignmentExpression = (executionHarness.statements[2] as ts.ExpressionStatement).expression as ts.BinaryExpression;
+    return assignmentExpression.left as ts.Identifier;
+  }
+
+  protected get executionHarnessDefaultFunctionIdentifierNode(): ts.Identifier {
+    const executionHarness = this.sources.get(`${EXECUTION_HARNESS_FILENAME}.ts`)!;
+    const assignmentExpression = (executionHarness.statements[2] as ts.ExpressionStatement).expression as ts.BinaryExpression;
+    const callExpression = (assignmentExpression.right as ts.CallExpression);
+
+    return callExpression.expression as ts.Identifier;
+  }
+
+  protected get argumentTypeNode(): ts.TypeNode {
+    const executionHarness = this.sources.get(`${EXECUTION_HARNESS_FILENAME}.ts`)!;
+    const moduleDeclaration = executionHarness.statements
+      .find(s => s.kind === ts.SyntaxKind.ModuleDeclaration)! as ts.ModuleDeclaration;
+    const moduleBlock = moduleDeclaration.body! as ts.ModuleBlock;
+    const variableDeclaration = UserCodeError.getDescendentNodeOfType(moduleBlock.statements[0], ts.SyntaxKind.VariableDeclaration)! as ts.VariableDeclaration;
+    return variableDeclaration.type!;
+  }
+
+  protected get outputTypeNode(): ts.TypeNode {
+    const executionHarness = this.sources.get(`${EXECUTION_HARNESS_FILENAME}.ts`)!;
+    const moduleDeclaration = executionHarness.statements
+      .find(s => s.kind === ts.SyntaxKind.ModuleDeclaration)! as ts.ModuleDeclaration;
+    const moduleBlock = moduleDeclaration.body! as ts.ModuleBlock;
+    const variableDeclaration = UserCodeError.getDescendentNodeOfType(moduleBlock.statements[1], ts.SyntaxKind.VariableDeclaration)! as ts.VariableDeclaration;
+    return variableDeclaration.type!;
+  }
+}
+
+function printTree(node: ts.Node | ts.Node[], level = 0): string {
+  if (Array.isArray(node)) {
+    let returnString = '';
+    for (const child of node) {
+      returnString += printTree(child, level);
+    }
+    return returnString;
+  }
+
+  let returnString = ts.SyntaxKind[node.kind].indent(level) + ': ' + node.getText().split('\n')[0] +  '\n';
+  for (const child of node.getChildren()) {
+    returnString += printTree(child, level + 1);
+  }
+  return returnString;
 }

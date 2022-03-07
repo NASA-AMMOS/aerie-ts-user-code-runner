@@ -39,17 +39,27 @@ Error messaging is even more important when dealing with user code as you really
 ### Type Error Examples
 
 ```
-Incorrect return type. Expected: 'number', Actual: 'string'.
+TypeError: Incorrect return type. Expected: 'number', Actual: 'string'.
+  at MyDSLFunction(0:54)
 >1| export default function MyDSLFunction(thing: string): string {
-                                                          ^^^^^^
+                                                          ~~~~~~
  2|   subroutine();
 ```
 
 ```
-Type 'string' is not assignable to type 'number'.
+TypeError: Incorrect argument type. Expected: '[string]', Actual: '[string, number]'.
+  at MyDSLFunction(0:38)
+>1| export default function MyDSLFunction(thing: string, other: number): string {
+                                          ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ 2|   subroutine();
+
+```
+
+```
+TypeError: Type 'string' is not assignable to type 'number'.
  1| export default function MyDSLFunction(thing: string): number {
 >2|   const other: number = 'hello';
-            ^^^^^
+            ~~~~~
  3|   return thing + ' world';
 ```
 
