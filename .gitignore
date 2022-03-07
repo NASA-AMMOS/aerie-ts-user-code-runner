@@ -2,6 +2,5 @@
 node_modules
 ts-edsl.iml
 *.tsbuildinfo
-*.js
-*.js.map
 .DS_Store
+build

@@ -1,7 +1,7 @@
 {
   "name": "@nasa-jpl/aerie-ts-user-code-runner",
   "version": "0.1.0",
-  "description": "",
+  "description": "A simple way to safely run user code written in Typescript.",
   "main": "build/UserCodeRunner.js",
   "type": "module",
   "scripts": {
@@ -11,7 +11,7 @@
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
+  "license": "MIT",
   "dependencies": {
     "source-map": "^0.7.3",
     "stack-trace": "^1.0.0-pre1",
