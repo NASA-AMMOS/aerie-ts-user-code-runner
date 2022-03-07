@@ -49,7 +49,6 @@ declare module 'vm' {
 
 export async function executeUserCode<ArgsType extends any[], ReturnType = any>(
   userCode: string,
-  userCodeFileName: string,
   args: ArgsType,
   outputType: string = 'any',
   argsTypes: string[] = ['any'],
@@ -58,7 +57,7 @@ export async function executeUserCode<ArgsType extends any[], ReturnType = any>(
 ): Promise<Result<ReturnType, UserCodeError[]>> {
 
   // Typecheck and transpile code
-  const userSourceFile = ts.createSourceFile(userCodeFileName, userCode, ts.ScriptTarget.ESNext, undefined, ts.ScriptKind.TS);
+  const userSourceFile = ts.createSourceFile(USER_FILE_ALIAS, userCode, ts.ScriptTarget.ESNext, undefined, ts.ScriptKind.TS);
 
   const executionCode =  `
     import defaultExport from '${USER_FILE_ALIAS}';

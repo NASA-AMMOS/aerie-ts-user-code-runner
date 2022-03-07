@@ -16,7 +16,6 @@ it('should produce runtime errors', async () => {
 
   const result = await executeUserCode(
     userCode,
-    `userCode`,
     ['hello'],
     'string',
     ['string'],
@@ -49,7 +48,6 @@ it('should produce return type errors', async () => {
 
   const result = await executeUserCode(
     userCode,
-    `userCode`,
     ['hello'],
     'number',
     ['string'],
@@ -79,7 +77,6 @@ it('should produce input type errors', async () => {
 
   const result = await executeUserCode(
     userCode,
-    `userCode`,
     ['hello'],
     'string',
     ['string'],
@@ -104,7 +101,6 @@ it('should produce internal type errors', async () => {
 
   const result = await executeUserCode(
     userCode,
-    `userCode`,
     ['hello'],
     'number',
     ['string'],
@@ -129,7 +125,6 @@ it('should return the final value', async () => {
 
   const result = await executeUserCode(
     userCode,
-    `userCode`,
     ['hello'],
     'string',
     ['string'],

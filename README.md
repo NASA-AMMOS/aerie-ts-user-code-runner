@@ -24,7 +24,6 @@ const userCode = `
 
 const result = await executeUserCode(
   userCode, // Actual user code
-  `userCode`, // Filename for stack traces
   ['hello'], // Input arguments
   'string', // Return type
   ['string'], // Argument types
@@ -71,7 +70,6 @@ Error: This is a test error
 ```ts
 async function executeUserCode<ArgsType extends any[], ReturnType = any>(
   userCode: string, // User code as a string
-  userCodeFileName: string, // Filename for stack traces
   args: ArgsType, // Input arguments
   outputType: string = 'any', // Return type for typechecking
   argsTypes: string[] = ['any'], // Argument types for typechecking
