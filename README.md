@@ -14,6 +14,13 @@ A simple way to safely run user code written in Typescript.
 - **No Throw** - executeUserCode never throws. The return uses a Result monad to ensure confidence in dealing with user code errors
 
 
+## Requirements
+
+NodeJS >= 13.0.0
+
+Because we are transipiling and running the typescript code as modules in a vm, we need to flag on the vm modules flag at runtime with
+```node --experimental-vm-modules```
+
 ## Example
 ```ts
 const userCode = `

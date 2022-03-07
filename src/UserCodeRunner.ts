@@ -167,11 +167,15 @@ export async function executeUserCode<ArgsType extends any[], ReturnType = any>(
   }
 }
 
-// Base error type for the DSLRunner
+// Base error type for the User Code Runner
 abstract class UserCodeError {
+  // Simple Error Message
   public abstract get message(): string;
+  // Stack of the Error
   public abstract get stack(): string;
+  // Source code with surrounding lines to provide context to the error
   public abstract get sourceContext(): string;
+  // Location in the source code where the error occurred
   public abstract get location(): { line: number, column: number };
   protected static underlineNodes(file: ts.SourceFile, nodes: ts.Node[], contextLines: number = 1) {
     return UserCodeError.underlineRanges(file, nodes.map(node => [node.getStart(), node.getEnd()]), contextLines);
@@ -284,6 +288,7 @@ class UserCodeTypeError extends UserCodeError {
     return 'at ' + functionDeclaration.name?.text + '(' + this.location.line + ':' + this.location.column + ')';
   }
 
+  // Source code with surrounding lines to provide context to the error
   public get sourceContext(): string {
     const start = this.diagnostic.start!;
     const end = this.diagnostic.start! + this.diagnostic.length!;
@@ -350,6 +355,7 @@ class UserCodeRuntimeError extends UserCodeError {
       .join('\n');
   }
 
+  // Source code with surrounding lines to provide context to the error
   public get sourceContext(): string {
     return UserCodeRuntimeError.displayLineWithContext(this.tsFileCache.get(`${USER_FILE_ALIAS}.ts`)!.text, this.location.line);
   }
@@ -394,6 +400,7 @@ class ExecutionHarnessTypeError extends UserCodeTypeError {
     return 'at ' + this.defaultExportedFunctionNode.name!.getText() + '(' + this.location.line + ':' + this.location.column + ')';
   }
 
+  // Source code with surrounding lines to provide context to the error
   public get sourceContext(): string {
     const userFile = this.sources.get(`${USER_FILE_ALIAS}.ts`)!;
     const diagnosticNode = UserCodeError.getDescendentAtPosition(this.sources.get(`${EXECUTION_HARNESS_FILENAME}.ts`)!, this.diagnostic.start!);

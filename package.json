@@ -1,12 +1,13 @@
 {
-  "name": "ts-user-code-runner",
+  "name": "@nasa-jpl/aerie-ts-user-code-runner",
   "version": "0.1.0",
   "description": "",
-  "main": "index.js",
+  "main": "build/UserCodeRunner.js",
   "type": "module",
   "scripts": {
     "test": "node --experimental-vm-modules --enable-source-maps node_modules/jest/bin/jest.js --watch",
-    "build": "tsc -p tsconfig.build.json --watch"
+    "build": "tsc -p tsconfig.json",
+    "watch": "tsc -p tsconfig.json --watch"
   },
   "keywords": [],
   "author": "",
