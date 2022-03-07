@@ -1,6 +1,6 @@
 # Typescript User Code Runner
 
-A simple way to safeluy run user code written in Typescript.
+A simple way to safely run user code written in Typescript.
 
 - **Speed** - NodeJS/V8 makes JavaScript fast enough that if you have performance issues, you really should probably
   rethink your architecture and move more processing out of user code.
@@ -83,7 +83,67 @@ async function executeUserCode<ArgsType extends any[], ReturnType = any>(
   args: ArgsType, // Input arguments
   outputType: string = 'any', // Return type for typechecking
   argsTypes: string[] = ['any'], // Argument types for typechecking
-  context: vm.Context = vm.createContext(), // vm.Context to carry state between user code runs and inject globals
   timeout: number = 5000, // Timeout in milliseconds
+  additionalSources: SourceFile[] = [], // Additional source files to include in the run time
+  context: vm.Context = vm.createContext(), // vm.Context to carry state between user code runs and inject globals
 ): Promise<Result<ReturnType, UserCodeError[]>>
+```
+
+
+## Usage Examples
+
+## Simple Example
+```ts
+const userCode = `
+  export default function MyDSLFunction(thing: string): string {
+    return thing + ' world';
+  }
+  `.trimTemplate();
+
+const result = await executeUserCode(
+  userCode,
+  ['hello'],
+  'string',
+  ['string'],
+);
+
+expect(result.isOk()).toBeTruthy();
+expect(result.unwrap()).toBe('hello world');
+```
+
+### Including other files for import and declaring some globals
+```ts
+const userCode = `
+  import { importedFunction } from 'other-importable';
+  export default function myDSLFunction(thing: string): string {
+    return someGlobalFunction(thing) + otherFunction(' world');
+  }
+  `.trimTemplate();
+
+const result = await executeUserCode(
+  userCode,
+  ['hello'],
+  'string',
+  ['string'],
+  1000,
+  [
+    ts.createSourceFile('globals.d.ts', `
+    declare global {
+      function someGlobalFunction(thing: string): string;
+    }
+    export {};
+    `.trimTemplate(), ts.ScriptTarget.ESNext, true),
+    ts.createSourceFile('other-importable.ts', `
+    export function importedFunction(thing: string): string {
+      return thing + ' other';
+    }
+    `.trimTemplate(), ts.ScriptTarget.ESNext, true)
+  ],
+  vm.createContext({
+    someGlobalFunction: (thing: string) => 'hello ' + thing, // Implementation injected to global namespace here
+  }),
+);
+
+// expect(result.isOk()).toBeTruthy();
+expect(result.unwrap()).toBe('hello hello world other');
 ```

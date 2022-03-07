@@ -47,8 +47,9 @@ export async function executeUserCode<ArgsType extends any[], ReturnType = any>(
   args: ArgsType,
   outputType: string = 'any',
   argsTypes: string[] = ['any'],
-  context: vm.Context = vm.createContext(),
   timeout: number = 5000,
+  additionalSourceFiles: ts.SourceFile[] = [],
+  context: vm.Context = vm.createContext(),
 ): Promise<Result<ReturnType, UserCodeError[]>> {
 
   // Typecheck and transpile code
@@ -70,24 +71,31 @@ export async function executeUserCode<ArgsType extends any[], ReturnType = any>(
   tsFileCache.set(`${USER_FILE_ALIAS}.ts`, userSourceFile);
   tsFileCache.set(`${EXECUTION_HARNESS_FILENAME}.ts`, executionSourceFile);
 
+  for (const additionalSourceFile of additionalSourceFiles) {
+    tsFileCache.set(additionalSourceFile.fileName, additionalSourceFile);
+  }
+
   const jsFileCache = new Map<string, ts.SourceFile>();
 
   const defaultCompilerHost = ts.createCompilerHost({});
   const customCompilerHost: ts.CompilerHost = {
     ...defaultCompilerHost,
+    getCurrentDirectory(): string {
+      return '';
+    },
     getSourceFile: (fileName, languageVersion) => {
       if (tsFileCache.has(fileName)) {
         return tsFileCache.get(fileName);
       } else if (fileName.includes('typescript/lib')) {
         return defaultCompilerHost.getSourceFile(fileName, languageVersion);
       }
+      console.log(fileName);
       return undefined;
     },
     writeFile: (filename, data) => {
       jsFileCache.set(filename, ts.createSourceFile(filename, data, ts.ScriptTarget.ESNext, undefined, ts.ScriptKind.JS));
     },
     readFile(fileName: string): string | undefined {
-
       if (tsFileCache.has(fileName)) {
         return tsFileCache.get(fileName)!.text;
       }
@@ -99,7 +107,7 @@ export async function executeUserCode<ArgsType extends any[], ReturnType = any>(
     },
   };
 
-  const program = ts.createProgram([USER_FILE_ALIAS, EXECUTION_HARNESS_FILENAME], {
+  const program = ts.createProgram([...additionalSourceFiles.map(f => f.fileName), EXECUTION_HARNESS_FILENAME], {
     target: ts.ScriptTarget.ESNext,
     module: ts.ModuleKind.ES2022,
     lib: ['lib.esnext.d.ts'],
@@ -141,7 +149,6 @@ export async function executeUserCode<ArgsType extends any[], ReturnType = any>(
       }));
     }
   }
-
   const harnessModule = moduleCache.get(`${EXECUTION_HARNESS_FILENAME}.js`)!;
   await harnessModule.link((specifier) => {
     if (moduleCache.has(specifier + '.js')) {
@@ -379,7 +386,7 @@ class ExecutionHarnessTypeError extends UserCodeTypeError {
       this.diagnostic.length = Math.max(...parameters.map(p => p.getEnd())) - this.diagnostic.start;
       this.diagnostic.messageText = `Incorrect argument type. Expected: '${this.argumentTypeNode.getText()}', Actual: '[${parameters.map(s => s.type?.getText()).join(', ')}]'.`;
     } else {
-      throw new Error('Unmapped execution harness error');
+      throw new Error('Unmapped execution harness error: ' + this.diagnostic.messageText);
     }
   }
 

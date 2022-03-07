@@ -2,6 +2,9 @@ import {executeUserCode} from "./UserCodeRunner";
 import {installStringUtils} from "./utils/stringUtils";
 installStringUtils();
 
+import ts from 'typescript';
+import * as vm from "vm";
+
 it('should produce runtime errors', async () => {
   const userCode = `
     export default function MyDSLFunction(thing: string): string {
@@ -164,4 +167,40 @@ it('should return the final value', async () => {
 
   expect(result.isOk()).toBeTruthy();
   expect(result.unwrap()).toBe('hello world');
+});
+
+it('should accept additional source files', async () => {
+  const userCode = `
+    import { importedFunction } from 'other-importable';
+    export default function myDSLFunction(thing: string): string {
+      return someGlobalFunction(thing) + importedFunction(' world');
+    }
+    `.trimTemplate();
+
+  const result = await executeUserCode(
+    userCode,
+    ['hello'],
+    'string',
+    ['string'],
+    1000,
+    [
+      ts.createSourceFile('globals.d.ts', `
+      declare global {
+        function someGlobalFunction(thing: string): string;
+      }
+      export {};
+      `.trimTemplate(), ts.ScriptTarget.ESNext, true),
+      ts.createSourceFile('other-importable.ts', `
+      export function importedFunction(thing: string): string {
+        return thing + ' other';
+      }
+      `.trimTemplate(), ts.ScriptTarget.ESNext, true)
+    ],
+    vm.createContext({
+      someGlobalFunction: (thing: string) => 'hello ' + thing, // Implementation injected to global namespace here
+    }),
+  );
+
+  // expect(result.isOk()).toBeTruthy();
+  expect(result.unwrap()).toBe('hello hello world other');
 });
