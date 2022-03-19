@@ -1,4 +1,4 @@
-import {dedent, indent, installStringUtils, trimTemplate} from "./stringUtils";
+import {dedent, indent, installStringUtils, trimTemplate} from "../src/utils/stringUtils";
 
 describe('indent', () => {
   it('should indent a string', () => {

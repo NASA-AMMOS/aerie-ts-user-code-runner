@@ -1,9 +1,11 @@
-import {executeUserCode} from "./UserCodeRunner";
-import {installStringUtils} from "./utils/stringUtils";
+import './inputs/polyfills';
+import {UserCodeRunner} from "../src/UserCodeRunner";
+import {installStringUtils} from "../src/utils/stringUtils";
 installStringUtils();
 
 import ts from 'typescript';
 import * as vm from "vm";
+import * as fs from "fs";
 
 it('should produce runtime errors', async () => {
   const userCode = `
@@ -17,7 +19,9 @@ it('should produce runtime errors', async () => {
     }
     `.trimTemplate();
 
-  const result = await executeUserCode(
+  const runner = new UserCodeRunner();
+
+  const result = await runner.executeUserCode(
     userCode,
     ['hello'],
     'string',
@@ -55,7 +59,9 @@ it('should produce return type errors', async () => {
     }
     `.trimTemplate();
 
-  const result = await executeUserCode(
+  const runner = new UserCodeRunner();
+
+  const result = await runner.executeUserCode(
     userCode,
     ['hello'],
     'number',
@@ -92,7 +98,9 @@ it('should produce input type errors', async () => {
     }
     `.trimTemplate();
 
-  const result = await executeUserCode(
+  const runner = new UserCodeRunner();
+
+  const result = await runner.executeUserCode(
     userCode,
     ['hello'],
     'string',
@@ -125,7 +133,9 @@ it('should produce internal type errors', async () => {
     }
     `.trimTemplate();
 
-  const result = await executeUserCode(
+  const runner = new UserCodeRunner();
+
+  const result = await runner.executeUserCode(
     userCode,
     ['hello'],
     'number',
@@ -158,7 +168,9 @@ it('should return the final value', async () => {
     }
     `.trimTemplate();
 
-  const result = await executeUserCode(
+  const runner = new UserCodeRunner();
+
+  const result = await runner.executeUserCode(
     userCode,
     ['hello'],
     'string',
@@ -177,7 +189,9 @@ it('should accept additional source files', async () => {
     }
     `.trimTemplate();
 
-  const result = await executeUserCode(
+  const runner = new UserCodeRunner();
+
+  const result = await runner.executeUserCode(
     userCode,
     ['hello'],
     'string',
@@ -204,3 +218,42 @@ it('should accept additional source files', async () => {
   // expect(result.isOk()).toBeTruthy();
   expect(result.unwrap()).toBe('hello hello world other');
 });
+
+test.only('Aerie Throw Regression Test', async () => {
+  const userCode = `
+    export default function SingleCommandExpansion(props: { activity: ActivityType }): Command {
+      const duration = Temporal.Duration.from('PT1H');
+      return BAKE_BREAD;
+    }
+    `.trimTemplate()
+
+  const runner = new UserCodeRunner();
+  const [commandTypes, activityTypes, temporalPolyfill] = await Promise.all([
+    fs.promises.readFile(new URL('./inputs/command-types.ts', import.meta.url).pathname, 'utf8'),
+    fs.promises.readFile(new URL('./inputs/activity-types.ts', import.meta.url).pathname, 'utf8'),
+    fs.promises.readFile(new URL('./inputs/TemporalPolyfillTypes.ts', import.meta.url).pathname, 'utf8'),
+  ]);
+
+  const context = vm.createContext({
+    Temporal,
+  });
+  const result = await runner.executeUserCode(
+    userCode,
+    [{ activity: null}],
+    'Command[] | Command | null',
+    ['{ activity: ActivityType }'],
+    1000,
+    [
+      ts.createSourceFile('command-types.ts', commandTypes, ts.ScriptTarget.ESNext, true),
+      ts.createSourceFile('activity-types.ts', activityTypes, ts.ScriptTarget.ESNext, true),
+      ts.createSourceFile('TemporalPolyfillTypes.ts', temporalPolyfill, ts.ScriptTarget.ESNext, true),
+    ],
+    context,
+  );
+  console.log(context);
+
+  // expect(result.isOk()).toBeTruthy();
+  // expect(result.unwrap()).toMatchObject({});
+  expect(result.unwrapErr().toString()).toBe(null);
+})
+
