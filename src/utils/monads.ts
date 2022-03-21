@@ -1,5 +1,6 @@
 /** None value */
 const None = Symbol('None');
+export type ERRORED = any;
 
 /** Error with a message and contents */
 class ErrorWithContents<T> extends Error {
@@ -9,7 +10,6 @@ class ErrorWithContents<T> extends Error {
     this.contents = contents;
   }
 }
-
 /**
  * Result<T, E> is a type used for returning and propagating errors. It has the variants, Ok(T), representing success
  * and containing a value, and Err(E), representing error and containing an error value.
@@ -25,12 +25,12 @@ export class Result<T, E> {
   }
 
   /** Create a success value */
-  public static Ok<T, E = unknown>(value: T): Result<T, E> {
+  public static Ok<T, E = any>(value: T): Result<T, E> {
     return new Result(value, None as unknown as E);
   }
 
   /** Create an error value */
-  public static Err<E, T = unknown>(error: E): Result<T, E> {
+  public static Err<E, T = any>(error: E): Result<T, E> {
     return new Result(None as unknown as T, error);
   }
 
