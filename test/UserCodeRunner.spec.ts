@@ -1,3 +1,4 @@
+// @ts-ignore
 import './inputs/polyfills';
 import {UserCodeRunner} from "../src/UserCodeRunner";
 import {installStringUtils} from "../src/utils/stringUtils";
@@ -219,7 +220,7 @@ it('should accept additional source files', async () => {
   expect(result.unwrap()).toBe('hello hello world other');
 });
 
-test.only('Aerie Throw Regression Test', async () => {
+test('Aerie Throw Regression Test', async () => {
   const userCode = `
     export default function SingleCommandExpansion(props: { activity: ActivityType }): Command {
       const duration = Temporal.Duration.from('PT1H');
@@ -234,8 +235,12 @@ test.only('Aerie Throw Regression Test', async () => {
     fs.promises.readFile(new URL('./inputs/TemporalPolyfillTypes.ts', import.meta.url).pathname, 'utf8'),
   ]);
 
+  // @ts-ignore
+  const {Commands} = await import('./inputs/command-types.js');
+
   const context = vm.createContext({
     Temporal,
+    ...Commands,
   });
   const result = await runner.executeUserCode(
     userCode,
@@ -250,10 +255,10 @@ test.only('Aerie Throw Regression Test', async () => {
     ],
     context,
   );
-  console.log(context);
 
-  // expect(result.isOk()).toBeTruthy();
-  // expect(result.unwrap()).toMatchObject({});
-  expect(result.unwrapErr().toString()).toBe(null);
+  expect(result.unwrap()).toMatchObject({
+    stem: 'BAKE_BREAD',
+    arguments: [],
+  });
 })
 
