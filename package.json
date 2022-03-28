@@ -5,7 +5,7 @@
   "main": "build/UserCodeRunner.js",
   "type": "module",
   "scripts": {
-    "test": "node --experimental-vm-modules --enable-source-maps node_modules/jest/bin/jest.js --watch",
+    "test": "node --experimental-vm-modules --enable-source-maps node_modules/jest/bin/jest.js",
     "build": "tsc -p tsconfig.json",
     "prepublish": "npm run build",
     "watch": "tsc -p tsconfig.json --watch"
