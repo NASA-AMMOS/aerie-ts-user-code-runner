@@ -199,7 +199,7 @@ export class UserCodeRunner {
 		additionalSourceFiles: ts.SourceFile[] = [],
 		context: vm.Context = vm.createContext(),
 	): Promise<Result<ReturnType, UserCodeError[]>> {
-		const userCodeHash = UserCodeRunner.hash(userCode);
+		const userCodeHash = UserCodeRunner.hash(`${userCode}:${outputType}:${argsTypes.join(':')}${additionalSourceFiles.map(f => `:${f.text}`).join('')}`);
 
 		if (!this.user_file_cache.has(userCodeHash)) {
 			const result = await UserCodeRunner.preProcess(userCode, outputType, argsTypes, additionalSourceFiles);
