@@ -184,7 +184,7 @@ it('should return the final value', async () => {
 
 it('should accept additional source files', async () => {
   const userCode = `
-    import { importedFunction } from 'other-importable';
+    import { importedFunction } from 'other-importable.js';
     export default function myDSLFunction(thing: string): string {
       return someGlobalFunction(thing) + importedFunction(' world');
     }
@@ -235,12 +235,8 @@ test('Aerie Throw Regression Test', async () => {
     fs.promises.readFile(new URL('./inputs/TemporalPolyfillTypes.ts', import.meta.url).pathname, 'utf8'),
   ]);
 
-  // @ts-ignore
-  const {Commands} = await import('./inputs/command-types.js');
-
   const context = vm.createContext({
     Temporal,
-    ...Commands,
   });
   const result = await runner.executeUserCode(
     userCode,

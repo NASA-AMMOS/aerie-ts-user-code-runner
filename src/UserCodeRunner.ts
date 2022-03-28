@@ -89,7 +89,13 @@ export class UserCodeRunner {
 		);
 
 		const executionCode = `
-      import defaultExport from '${USER_FILE_ALIAS}';
+			${additionalSourceFiles.map(file => {
+				const extName = path.extname(file.fileName);
+				if (file.fileName.endsWith('.d.ts')) return '';
+				const fileNameSansExt = path.basename(file.fileName).replace(extName, '.js');
+				return `import '${fileNameSansExt}';`;
+			}).join('\n  ')}
+      import defaultExport from '${USER_FILE_ALIAS}.js';
       
       declare global {
         const args: [${argsTypes.join(', ')}];
@@ -231,8 +237,8 @@ export class UserCodeRunner {
 		}
 		const harnessModule = moduleCache.get(`${EXECUTION_HARNESS_FILENAME}.js`)!;
 		await harnessModule.link(specifier => {
-			if (moduleCache.has(specifier + '.js')) {
-				return moduleCache.get(specifier + '.js')!;
+			if (moduleCache.has(specifier)) {
+				return moduleCache.get(specifier)!;
 			}
 			throw new Error(`Unable to resolve dependency: ${specifier}`);
 		});
