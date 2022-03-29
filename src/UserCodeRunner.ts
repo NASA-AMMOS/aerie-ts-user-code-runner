@@ -353,16 +353,14 @@ export abstract class UserCodeError {
 		return null;
 	}
 
-	protected static getDescendentAtPosition(node: ts.Node, position: number): ts.Node | null {
-		for (const child1 of node.getChildren()) {
-			if (child1.getStart() <= position && position <= child1.getEnd()) {
-				return UserCodeError.getDescendentAtPosition(child1, position);
-			}
-		}
-		const start = node.getStart();
-		const end = node.getEnd();
-		if (start <= position && position <= end) {
+	protected static getDescendentAtLocation(node: ts.Node, start: number, end: number): ts.Node | null {
+		if (node.getStart() === start && node.getEnd() === end) {
 			return node;
+		}
+		for (const child1 of node.getChildren()) {
+			if (child1.getStart() <= start && end <= child1.getEnd()) {
+				return UserCodeError.getDescendentAtLocation(child1, start, end);
+			}
 		}
 		return null;
 	}
@@ -398,7 +396,7 @@ export class UserCodeTypeError extends UserCodeError {
 
 	public get stack(): string {
 		const userFile = this.sources.get(`${USER_FILE_ALIAS}.ts`)!;
-		const diagnosticNode = UserCodeError.getDescendentAtPosition(userFile, this.diagnostic.start!);
+		const diagnosticNode = UserCodeError.getDescendentAtLocation(userFile, this.diagnostic.start!, this.diagnostic.start! + this.diagnostic.length!);
 		if (diagnosticNode === null) {
 			throw new Error(`Could not find node for diagnostic ${this.diagnostic.messageText}`);
 		}
@@ -513,9 +511,10 @@ export class UserCodeRuntimeError extends UserCodeError {
 export class ExecutionHarnessTypeError extends UserCodeTypeError {
 	constructor(protected diagnostic: ts.Diagnostic, protected sources: Map<string, ts.SourceFile>) {
 		super(diagnostic, sources);
-		const diagnosticNode = UserCodeError.getDescendentAtPosition(
+		const diagnosticNode = UserCodeError.getDescendentAtLocation(
 			sources.get(`${EXECUTION_HARNESS_FILENAME}.ts`)!,
 			this.diagnostic.start!,
+			this.diagnostic.start! + this.diagnostic.length!,
 		);
 
 		if (diagnosticNode === null) {
@@ -524,17 +523,17 @@ export class ExecutionHarnessTypeError extends UserCodeTypeError {
 
 		// Get out diagnostic node and check if its our result or our defaultFunction call to map correctly back to user code file
 		if (
-			diagnosticNode.getStart() >= this.executionHarnessResultNode.getStart() &&
-			diagnosticNode.getEnd() <= this.executionHarnessResultNode.getEnd()
+			diagnosticNode === this.executionHarnessResultNode
 		) {
 			this.diagnostic.file = this.sources.get(`${USER_FILE_ALIAS}.ts`)!;
-			this.diagnostic.start = this.defaultExportedFunctionNode.type!.getStart();
-			this.diagnostic.length =
-				this.defaultExportedFunctionNode.type!.getEnd() - this.defaultExportedFunctionNode.type!.getStart();
+			const typeNode = this.defaultExportedFunctionNode.type!;
+			this.diagnostic.start = typeNode.getStart();
+			this.diagnostic.length = typeNode.getEnd() - typeNode.getStart();
 			this.diagnostic.messageText = `Incorrect return type. Expected: '${this.outputTypeNode.getText()}', Actual: '${this.defaultExportedFunctionNode.type!.getText()}'.`;
 		} else if (
-			diagnosticNode.getStart() >= this.executionHarnessDefaultFunctionIdentifierNode.getStart() &&
-			diagnosticNode.getEnd() <= this.executionHarnessDefaultFunctionIdentifierNode.getEnd()
+			diagnosticNode === this.executionHarnessDefaultFunctionCallNode
+			||diagnosticNode === this.executionHarnessDefaultFunctionIdentifierNode
+			||diagnosticNode === this.executionHarnessArgumentsNode
 		) {
 			this.diagnostic.file = this.sources.get(`${USER_FILE_ALIAS}.ts`)!;
 			const parameters = this.defaultExportedFunctionNode.parameters;
@@ -544,7 +543,7 @@ export class ExecutionHarnessTypeError extends UserCodeTypeError {
 				.map(s => s.type?.getText())
 				.join(', ')}]'.`;
 		} else {
-			// throw new Error('Unmapped execution harness error: ' + this.diagnostic.messageText);
+			throw new Error('Unmapped execution harness error: ' + this.diagnostic.messageText);
 		}
 	}
 
@@ -563,9 +562,10 @@ export class ExecutionHarnessTypeError extends UserCodeTypeError {
 	// Source code with surrounding lines to provide context to the error
 	public get sourceContext(): string {
 		const userFile = this.sources.get(`${USER_FILE_ALIAS}.ts`)!;
-		const diagnosticNode = UserCodeError.getDescendentAtPosition(
+		const diagnosticNode = UserCodeError.getDescendentAtLocation(
 			this.sources.get(`${EXECUTION_HARNESS_FILENAME}.ts`)!,
 			this.diagnostic.start!,
+			this.diagnostic.start! + this.diagnostic.length!,
 		);
 
 		if (diagnosticNode === this.executionHarnessResultNode) {
@@ -597,17 +597,33 @@ export class ExecutionHarnessTypeError extends UserCodeTypeError {
 
 	protected get executionHarnessResultNode(): ts.Identifier {
 		const executionHarness = this.sources.get(`${EXECUTION_HARNESS_FILENAME}.ts`)!;
-		const assignmentExpression = (executionHarness.statements[2] as ts.ExpressionStatement)
-			.expression as ts.BinaryExpression;
-		return assignmentExpression.left as ts.Identifier;
+		const expressionStatement = executionHarness.statements.find(
+			s =>
+				s.kind === ts.SyntaxKind.ExpressionStatement
+		)! as ts.ExpressionStatement;
+		const binaryExpression = expressionStatement.expression as ts.BinaryExpression;
+		return binaryExpression.left as ts.Identifier;
+	}
+
+	protected get executionHarnessDefaultFunctionCallNode(): ts.CallExpression {
+		const executionHarness = this.sources.get(`${EXECUTION_HARNESS_FILENAME}.ts`)!;
+		const expressionStatement = executionHarness.statements.find(
+			s =>
+				s.kind === ts.SyntaxKind.ExpressionStatement
+		)! as ts.ExpressionStatement;
+		const binaryExpression = expressionStatement.expression as ts.BinaryExpression;
+		return binaryExpression.right as ts.CallExpression;
+	}
+
+	protected get executionHarnessArgumentsNode(): ts.SyntaxList {
+		const callExpression = this.executionHarnessDefaultFunctionCallNode
+		return callExpression.getChildren().find(
+			c => c.kind === ts.SyntaxKind.SyntaxList,
+		)! as ts.SyntaxList;
 	}
 
 	protected get executionHarnessDefaultFunctionIdentifierNode(): ts.Identifier {
-		const executionHarness = this.sources.get(`${EXECUTION_HARNESS_FILENAME}.ts`)!;
-		const assignmentExpression = (executionHarness.statements[2] as ts.ExpressionStatement)
-			.expression as ts.BinaryExpression;
-		const callExpression = assignmentExpression.right as ts.CallExpression;
-
+		const callExpression = this.executionHarnessDefaultFunctionCallNode
 		return callExpression.expression as ts.Identifier;
 	}
 
