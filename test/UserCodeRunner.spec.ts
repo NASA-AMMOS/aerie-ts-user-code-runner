@@ -258,3 +258,82 @@ test('Aerie Throw Regression Test', async () => {
   });
 })
 
+test('Aerie undefined node test', async () => {
+  const userCode = `
+    export default function BakeBananaBreadExpansionLogic(
+      props: {
+        activityInstance: ActivityType;
+      },
+      context: Context
+    ): ExpansionReturn {
+      return [
+        PREHEAT_OVEN(props.activityInstance.temperature),
+        PREPARE_LOAF(props.activityInstance.tbSugar, props.activityInstance.glutenFree),
+        BAKE_BREAD,
+      ];
+    }
+    `.trimTemplate()
+
+  const runner = new UserCodeRunner();
+  const [commandTypes, activityTypes, temporalPolyfill] = await Promise.all([
+    fs.promises.readFile(new URL('./inputs/command-types.ts', import.meta.url).pathname, 'utf8'),
+    fs.promises.readFile(new URL('./inputs/activity-types.ts', import.meta.url).pathname, 'utf8'),
+    fs.promises.readFile(new URL('./inputs/TemporalPolyfillTypes.ts', import.meta.url).pathname, 'utf8'),
+  ]);
+
+  const context = vm.createContext({
+    Temporal,
+  });
+  const result = await runner.executeUserCode(
+    userCode,
+    [{ activityInstance: null}, {}],
+    'Command[] | Command | null',
+    ['{ activityInstance: ActivityType }', 'Context'],
+    1000,
+    [
+      ts.createSourceFile('command-types.ts', commandTypes, ts.ScriptTarget.ESNext, true),
+      ts.createSourceFile('activity-types.ts', activityTypes, ts.ScriptTarget.ESNext, true),
+      ts.createSourceFile('TemporalPolyfillTypes.ts', temporalPolyfill, ts.ScriptTarget.ESNext, true),
+    ],
+    context,
+  );
+
+  expect(result.unwrapErr()).toMatchObject(expect.arrayContaining([
+    expect.objectContaining({
+      message: "TypeError: Incorrect return type. Expected: 'Command[] | Command | null', Actual: 'ExpansionReturn'.",
+      stack: 'at BakeBananaBreadExpansionLogic(5:3)',
+      sourceContext: ' 5|   context: Context\n' +
+        '>6| ): ExpansionReturn {\n' +
+        '       ~~~~~~~~~~~~~~~\n' +
+        ' 7|   return [',
+      location: { line: 5, column: 3 }
+    }),
+    expect.objectContaining({
+      message: "TypeError: Property 'temperature' does not exist on type 'ParameterTest'.",
+      stack: 'at BakeBananaBreadExpansionLogic(7:40)',
+      sourceContext: ' 7|   return [\n' +
+        '>8|     PREHEAT_OVEN(props.activityInstance.temperature),\n' +
+        '                                            ~~~~~~~~~~~\n' +
+        ' 9|     PREPARE_LOAF(props.activityInstance.tbSugar, props.activityInstance.glutenFree),',
+      location: { line: 7, column: 40 }
+    }),
+    expect.objectContaining({
+      message: "TypeError: Property 'tbSugar' does not exist on type 'ParameterTest'.",
+      stack: 'at BakeBananaBreadExpansionLogic(8:40)',
+      sourceContext: ' 8|     PREHEAT_OVEN(props.activityInstance.temperature),\n' +
+        '>9|     PREPARE_LOAF(props.activityInstance.tbSugar, props.activityInstance.glutenFree),\n' +
+        '                                            ~~~~~~~\n' +
+        ' 10|     BAKE_BREAD,',
+      location: { line: 8, column: 40 }
+    }),
+    expect.objectContaining({
+      message: "TypeError: Property 'glutenFree' does not exist on type 'ParameterTest'.",
+      stack: 'at BakeBananaBreadExpansionLogic(8:72)',
+      sourceContext: ' 8|     PREHEAT_OVEN(props.activityInstance.temperature),\n' +
+        '>9|     PREPARE_LOAF(props.activityInstance.tbSugar, props.activityInstance.glutenFree),\n' +
+        '                                                                            ~~~~~~~~~~\n' +
+        ' 10|     BAKE_BREAD,',
+      location: { line: 8, column: 72 }
+    }),
+  ]));
+})
