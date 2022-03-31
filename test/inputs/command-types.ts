@@ -165,5 +165,5 @@ export const Commands = {		PREHEAT_OVEN: PREHEAT_OVEN,
 	PREPARE_LOAF: PREPARE_LOAF,
 	BAKE_BREAD: BAKE_BREAD,
 };
-const globalThis = (0,eval)("this");
+
 Object.assign(globalThis, Commands);
