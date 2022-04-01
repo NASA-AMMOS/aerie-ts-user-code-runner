@@ -73,7 +73,7 @@ export class UserCodeRunner {
 		});
 	}
 
-	private static async preProcess(
+	public static async preProcess(
 		userCode: string,
 		outputType: string = 'any',
 		argsTypes: string[] = ['any'],
