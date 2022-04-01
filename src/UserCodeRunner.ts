@@ -1,6 +1,9 @@
 import vm from 'vm';
 import crypto from 'crypto';
 import path from 'path';
+import {defaultErrorCodeMessageMappers} from './defaultErrorCodeMessageMappers.js';
+import {createMapDiagnosticMessage} from "./utils/errorMessageMapping";
+export {defaultErrorCodeMessageMappers} from './defaultErrorCodeMessageMappers.js';
 import ts from 'typescript';
 import { parse } from 'stack-trace';
 import { BasicSourceMapConsumer, IndexedSourceMapConsumer, SourceMapConsumer } from 'source-map';
@@ -60,10 +63,12 @@ interface CacheItem {
 export interface UserCodeRunnerOptions {
 	cache?: boolean;
 	cacheOptions?: LRUCache.Options<string, CacheItem>;
+	typeErrorCodeMessageMappers?: {[errorCode: number]: (message: string) => string | undefined },// The error code to message mappers
 }
 
 export class UserCodeRunner {
 	private user_file_cache: LRUCache<string, CacheItem>;
+	private mapDiagnosticMessage: ReturnType<typeof createMapDiagnosticMessage>;
 
 	constructor(options?: UserCodeRunnerOptions) {
 		this.user_file_cache = new LRUCache<string, CacheItem>({
@@ -71,9 +76,10 @@ export class UserCodeRunner {
 			ttl: 1000 * 60 * 30,
 			...options?.cacheOptions
 		});
+		this.mapDiagnosticMessage = createMapDiagnosticMessage(options?.typeErrorCodeMessageMappers ?? defaultErrorCodeMessageMappers);
 	}
 
-	public static async preProcess(
+	public async preProcess(
 		userCode: string,
 		outputType: string = 'any',
 		argsTypes: string[] = ['any'],
@@ -167,7 +173,7 @@ export class UserCodeRunner {
 		const sourceErrors: UserCodeError[] = [];
 		ts.getPreEmitDiagnostics(program).forEach(diagnostic => {
 			if (diagnostic.file) {
-				sourceErrors.push(UserCodeTypeError.new(diagnostic, tsFileMap));
+				sourceErrors.push(UserCodeTypeError.new(diagnostic, tsFileMap, this.mapDiagnosticMessage));
 			}
 		});
 
@@ -177,7 +183,7 @@ export class UserCodeRunner {
 
 		for (const diagnostic of emitResult.diagnostics) {
 			if (diagnostic.file) {
-				sourceErrors.push(UserCodeTypeError.new(diagnostic, tsFileMap));
+				sourceErrors.push(UserCodeTypeError.new(diagnostic, tsFileMap, this.mapDiagnosticMessage));
 			}
 		}
 
@@ -208,7 +214,7 @@ export class UserCodeRunner {
 		const userCodeHash = UserCodeRunner.hash(`${userCode}:${outputType}:${argsTypes.join(':')}${additionalSourceFiles.map(f => `:${f.text}`).join('')}`);
 
 		if (!this.user_file_cache.has(userCodeHash)) {
-			const result = await UserCodeRunner.preProcess(userCode, outputType, argsTypes, additionalSourceFiles);
+			const result = await this.preProcess(userCode, outputType, argsTypes, additionalSourceFiles);
 
 			if (result.isErr()) {
 				return result as Result<ERRORED, UserCodeError[]>;
@@ -386,12 +392,16 @@ export abstract class UserCodeError {
 
 // Pretty print type errors with indicators under the offending code
 export class UserCodeTypeError extends UserCodeError {
-	protected constructor(protected diagnostic: ts.Diagnostic, protected sources: Map<string, ts.SourceFile>) {
+	protected constructor(
+		protected diagnostic: ts.Diagnostic,
+		protected sources: Map<string, ts.SourceFile>,
+		protected mapDiagnosticMessage: (diagnostic:  ts.Diagnostic) => string[],
+	) {
 		super();
 	}
 
 	public get message(): string {
-		return 'TypeError: ' + ts.flattenDiagnosticMessageText(this.diagnostic.messageText, '\n');
+		return `TypeError: TS${this.diagnostic.code} ${this.mapDiagnosticMessage(this.diagnostic).join('\n')}`;
 	}
 
 	public get stack(): string {
@@ -402,10 +412,10 @@ export class UserCodeTypeError extends UserCodeError {
 		}
 		const functionDeclaration = ts.findAncestor(diagnosticNode, node => {
 			return node.kind === ts.SyntaxKind.FunctionDeclaration;
-		}) as ts.FunctionDeclaration;
+		}) as ts.FunctionDeclaration | undefined;
 
-		return 'at ' + functionDeclaration.name?.text + '(' + this.location.line + ':' + this.location.column + ')';
-	}
+    return `at ${functionDeclaration?.name?.text ?? ''}(${this.location.line}:${this.location.column})`;
+  }
 
 	// Source code with surrounding lines to provide context to the error
 	public get sourceContext(): string {
@@ -425,11 +435,15 @@ export class UserCodeTypeError extends UserCodeError {
 		};
 	}
 
-	public static new(diagnostic: ts.Diagnostic, sources: Map<string, ts.SourceFile>): UserCodeError {
+	public static new(
+		diagnostic: ts.Diagnostic,
+		sources: Map<string, ts.SourceFile>,
+		mapDiagnosticMessage: (diagnostic:  ts.Diagnostic) => string[],
+	): UserCodeError {
 		if (diagnostic.file?.fileName === `${EXECUTION_HARNESS_FILENAME}.ts`) {
-			return new ExecutionHarnessTypeError(diagnostic, sources);
+			return new ExecutionHarnessTypeError(diagnostic, sources, mapDiagnosticMessage);
 		}
-		return new UserCodeTypeError(diagnostic, sources);
+		return new UserCodeTypeError(diagnostic, sources, mapDiagnosticMessage);
 	}
 }
 
@@ -509,8 +523,12 @@ export class UserCodeRuntimeError extends UserCodeError {
 
 // Redirect the execution harness errors to the user code type signature
 export class ExecutionHarnessTypeError extends UserCodeTypeError {
-	constructor(protected diagnostic: ts.Diagnostic, protected sources: Map<string, ts.SourceFile>) {
-		super(diagnostic, sources);
+	constructor(
+		protected diagnostic: ts.Diagnostic,
+		protected sources: Map<string, ts.SourceFile>,
+		protected mapDiagnosticMessage: (diagnostic:  ts.Diagnostic) => string[],
+	) {
+		super(diagnostic, sources, mapDiagnosticMessage);
 		const diagnosticNode = UserCodeError.getDescendentAtLocation(
 			sources.get(`${EXECUTION_HARNESS_FILENAME}.ts`)!,
 			this.diagnostic.start!,

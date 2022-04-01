@@ -71,7 +71,7 @@ it('should produce return type errors', async () => {
 
   expect(result.isErr()).toBeTruthy();
   expect(result.unwrapErr()[0].message).toBe(`
-    TypeError: Incorrect return type. Expected: 'number', Actual: 'string'.
+    TypeError: TS2322 Incorrect return type. Expected: 'number', Actual: 'string'.
     `.trimTemplate());
   expect(result.unwrapErr()[0].stack).toBe(`
     at MyDSLFunction(0:54)
@@ -110,7 +110,7 @@ it('should produce input type errors', async () => {
 
   expect(result.isErr()).toBeTruthy();
   expect(result.unwrapErr()[0].message).toBe(`
-    TypeError: Incorrect argument type. Expected: '[string]', Actual: '[string, number]'.
+    TypeError: TS2554 Incorrect argument type. Expected: '[string]', Actual: '[string, number]'.
     `.trimTemplate());
   expect(result.unwrapErr()[0].stack).toBe(`
     at MyDSLFunction(0:38)
@@ -145,7 +145,7 @@ it('should produce internal type errors', async () => {
 
   expect(result.isErr()).toBeTruthy();
   expect(result.unwrapErr()[0].message).toBe(`
-    TypeError: Type 'string' is not assignable to type 'number'.
+    TypeError: TS2322 Type 'string' is not assignable to type 'number'.
     `.trimTemplate());
   expect(result.unwrapErr()[0].stack).toBe(`
     at MyDSLFunction(1:8)
@@ -300,7 +300,7 @@ test('Aerie undefined node test', async () => {
 
   expect(result.unwrapErr()).toMatchObject(expect.arrayContaining([
     expect.objectContaining({
-      message: "TypeError: Incorrect return type. Expected: 'Command[] | Command | null', Actual: 'ExpansionReturn'.",
+      message: "TypeError: TS2322 Incorrect return type. Expected: 'Command[] | Command | null', Actual: 'ExpansionReturn'.",
       stack: 'at BakeBananaBreadExpansionLogic(5:3)',
       sourceContext: ' 5|   context: Context\n' +
         '>6| ): ExpansionReturn {\n' +
@@ -309,7 +309,7 @@ test('Aerie undefined node test', async () => {
       location: { line: 5, column: 3 }
     }),
     expect.objectContaining({
-      message: "TypeError: Property 'temperature' does not exist on type 'ParameterTest'.",
+      message: "TypeError: TS2339 Property 'temperature' does not exist on type 'ParameterTest'.",
       stack: 'at BakeBananaBreadExpansionLogic(7:40)',
       sourceContext: ' 7|   return [\n' +
         '>8|     PREHEAT_OVEN(props.activityInstance.temperature),\n' +
@@ -318,7 +318,7 @@ test('Aerie undefined node test', async () => {
       location: { line: 7, column: 40 }
     }),
     expect.objectContaining({
-      message: "TypeError: Property 'tbSugar' does not exist on type 'ParameterTest'.",
+      message: "TypeError: TS2339 Property 'tbSugar' does not exist on type 'ParameterTest'.",
       stack: 'at BakeBananaBreadExpansionLogic(8:40)',
       sourceContext: ' 8|     PREHEAT_OVEN(props.activityInstance.temperature),\n' +
         '>9|     PREPARE_LOAF(props.activityInstance.tbSugar, props.activityInstance.glutenFree),\n' +
@@ -327,7 +327,7 @@ test('Aerie undefined node test', async () => {
       location: { line: 8, column: 40 }
     }),
     expect.objectContaining({
-      message: "TypeError: Property 'glutenFree' does not exist on type 'ParameterTest'.",
+      message: "TypeError: TS2339 Property 'glutenFree' does not exist on type 'ParameterTest'.",
       stack: 'at BakeBananaBreadExpansionLogic(8:72)',
       sourceContext: ' 8|     PREHEAT_OVEN(props.activityInstance.temperature),\n' +
         '>9|     PREPARE_LOAF(props.activityInstance.tbSugar, props.activityInstance.glutenFree),\n' +
