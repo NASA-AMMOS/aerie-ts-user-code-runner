@@ -98,17 +98,18 @@ export class UserCodeRunner {
 			${additionalSourceFiles.map(file => {
 				const extName = path.extname(file.fileName);
 				if (file.fileName.endsWith('.d.ts')) return '';
-				const fileNameSansExt = path.basename(file.fileName).replace(extName, '.js');
+				const fileNameSansExt = removeExt(file.fileName);
 				return `import '${fileNameSansExt}';`;
 			}).join('\n  ')}
-      import defaultExport from '${USER_FILE_ALIAS}.js';
-      
+      import defaultExport from '${USER_FILE_ALIAS}';
+            
       declare global {
         const args: [${argsTypes.join(', ')}];
         let result: ${outputType};
       }
       result = defaultExport(...args);
     `;
+
 		const executionSourceFile = ts.createSourceFile(
 			EXECUTION_HARNESS_FILENAME,
 			executionCode,
@@ -119,14 +120,15 @@ export class UserCodeRunner {
 
 		const tsFileMap = new Map<string, ts.SourceFile>();
 
-		tsFileMap.set(`${USER_FILE_ALIAS}.ts`, userSourceFile);
-		tsFileMap.set(`${EXECUTION_HARNESS_FILENAME}.ts`, executionSourceFile);
+		tsFileMap.set(USER_FILE_ALIAS, userSourceFile);
+		tsFileMap.set(EXECUTION_HARNESS_FILENAME, executionSourceFile);
 
 		for (const additionalSourceFile of additionalSourceFiles) {
-			tsFileMap.set(additionalSourceFile.fileName, additionalSourceFile);
+			tsFileMap.set(removeExt(additionalSourceFile.fileName), additionalSourceFile);
 		}
 
 		const jsFileMap = new Map<string, ts.SourceFile>();
+		const sourceMapMap = new Map<string, ts.SourceFile>();
 
 		const defaultCompilerHost = ts.createCompilerHost({});
 		const customCompilerHost: ts.CompilerHost = {
@@ -135,27 +137,35 @@ export class UserCodeRunner {
 				return '';
 			},
 			getSourceFile: (fileName, languageVersion) => {
-				if (tsFileMap.has(fileName)) {
-					return tsFileMap.get(fileName);
+				const filenameSansExt = removeExt(fileName);
+				if (tsFileMap.has(filenameSansExt)) {
+					return tsFileMap.get(filenameSansExt);
 				} else if (fileName.includes('typescript/lib')) {
 					return defaultCompilerHost.getSourceFile(fileName, languageVersion);
 				}
 				return undefined;
 			},
-			writeFile: (filename, data) => {
-				jsFileMap.set(
-					filename,
-					ts.createSourceFile(filename, data, ts.ScriptTarget.ESNext, undefined, ts.ScriptKind.JS),
-				);
+			writeFile: (fileName, data) => {
+				const filenameSansExt = removeExt(fileName);
+				if (fileName.endsWith('.map')) {
+					sourceMapMap.set(removeExt(filenameSansExt), ts.createSourceFile(removeExt(filenameSansExt), data, ts.ScriptTarget.ESNext));
+				} else {
+					jsFileMap.set(
+						filenameSansExt,
+						ts.createSourceFile(filenameSansExt, data, ts.ScriptTarget.ESNext, undefined, ts.ScriptKind.JS),
+					);
+				}
 			},
 			readFile(fileName: string): string | undefined {
-				if (tsFileMap.has(fileName)) {
-					return tsFileMap.get(fileName)!.text;
+				const filenameSansExt = removeExt(fileName);
+				if (tsFileMap.has(filenameSansExt)) {
+					return tsFileMap.get(filenameSansExt)!.text;
 				}
 				return defaultCompilerHost.readFile(fileName);
 			},
 			fileExists(fileName: string): boolean {
-				return tsFileMap.has(path.basename(fileName));
+				const filenameSansExt = removeExt(fileName);
+				return tsFileMap.has(filenameSansExt);
 			},
 		};
 
@@ -179,7 +189,7 @@ export class UserCodeRunner {
 
 		const emitResult = program.emit();
 
-		const sourceMap = await new SourceMapConsumer(jsFileMap.get(`${USER_FILE_ALIAS}.js.map`)!.text);
+		const sourceMap = await new SourceMapConsumer(sourceMapMap.get(USER_FILE_ALIAS)!.text);
 
 		for (const diagnostic of emitResult.diagnostics) {
 			if (diagnostic.file) {
@@ -231,17 +241,15 @@ export class UserCodeRunner {
 		// Create modules for VM
 		const moduleCache = new Map<string, vm.Module>();
 		for (const jsFile of jsFileMap.values()) {
-			if (jsFile.fileName.endsWith('.js')) {
-				moduleCache.set(
-					jsFile.fileName,
-					new vm.SourceTextModule(jsFile.text, {
-						identifier: jsFile.fileName,
-						context,
-					}),
-				);
-			}
+			moduleCache.set(
+				jsFile.fileName,
+				new vm.SourceTextModule(jsFile.text, {
+					identifier: jsFile.fileName,
+					context,
+				}),
+			);
 		}
-		const harnessModule = moduleCache.get(`${EXECUTION_HARNESS_FILENAME}.js`)!;
+		const harnessModule = moduleCache.get(EXECUTION_HARNESS_FILENAME)!;
 		await harnessModule.link(specifier => {
 			if (moduleCache.has(specifier)) {
 				return moduleCache.get(specifier)!;
@@ -405,7 +413,7 @@ export class UserCodeTypeError extends UserCodeError {
 	}
 
 	public get stack(): string {
-		const userFile = this.sources.get(`${USER_FILE_ALIAS}.ts`)!;
+		const userFile = this.sources.get(USER_FILE_ALIAS)!;
 		const diagnosticNode = UserCodeError.getDescendentAtLocation(userFile, this.diagnostic.start!, this.diagnostic.start! + this.diagnostic.length!);
 		if (diagnosticNode === null) {
 			throw new Error(`Could not find node for diagnostic ${this.diagnostic.messageText}`);
@@ -421,14 +429,14 @@ export class UserCodeTypeError extends UserCodeError {
 	public get sourceContext(): string {
 		const start = this.diagnostic.start!;
 		const end = this.diagnostic.start! + this.diagnostic.length!;
-		return UserCodeTypeError.underlineRanges(this.sources.get(`${USER_FILE_ALIAS}.ts`)!, [[start, end]]);
+		return UserCodeTypeError.underlineRanges(this.sources.get(USER_FILE_ALIAS)!, [[start, end]]);
 	}
 
 	public get location(): { line: number; column: number } {
 		if (this.diagnostic.start === undefined) {
 			throw new Error('Could not find start position');
 		}
-		const location = this.sources.get(`${USER_FILE_ALIAS}.ts`)!.getLineAndCharacterOfPosition(this.diagnostic.start);
+		const location = this.sources.get(USER_FILE_ALIAS)!.getLineAndCharacterOfPosition(this.diagnostic.start);
 		return {
 			line: location.line,
 			column: location.character,
@@ -440,7 +448,7 @@ export class UserCodeTypeError extends UserCodeError {
 		sources: Map<string, ts.SourceFile>,
 		mapDiagnosticMessage: (diagnostic:  ts.Diagnostic) => string[],
 	): UserCodeError {
-		if (diagnostic.file?.fileName === `${EXECUTION_HARNESS_FILENAME}.ts`) {
+		if (removeExt(diagnostic.file?.fileName ?? '') === EXECUTION_HARNESS_FILENAME) {
 			return new ExecutionHarnessTypeError(diagnostic, sources, mapDiagnosticMessage);
 		}
 		return new UserCodeTypeError(diagnostic, sources, mapDiagnosticMessage);
@@ -467,7 +475,7 @@ export class UserCodeRuntimeError extends UserCodeError {
 	public get stack(): string {
 		const stack = parse(this.error);
 		const stackWithoutHarness = stack
-			.filter(callsite => callsite.getFileName()?.endsWith(`${USER_FILE_ALIAS}.js`))
+			.filter(callsite => callsite.getFileName()?.endsWith(USER_FILE_ALIAS))
 			.filter(callsite => {
 				if (callsite.getFileName() === undefined) {
 					return false;
@@ -495,7 +503,7 @@ export class UserCodeRuntimeError extends UserCodeError {
 	// Source code with surrounding lines to provide context to the error
 	public get sourceContext(): string {
 		return UserCodeRuntimeError.displayLineWithContext(
-			this.tsFileCache.get(`${USER_FILE_ALIAS}.ts`)!.text,
+			this.tsFileCache.get(USER_FILE_ALIAS)!.text,
 			this.location.line,
 		);
 	}
@@ -530,20 +538,20 @@ export class ExecutionHarnessTypeError extends UserCodeTypeError {
 	) {
 		super(diagnostic, sources, mapDiagnosticMessage);
 		const diagnosticNode = UserCodeError.getDescendentAtLocation(
-			sources.get(`${EXECUTION_HARNESS_FILENAME}.ts`)!,
+			sources.get(EXECUTION_HARNESS_FILENAME)!,
 			this.diagnostic.start!,
 			this.diagnostic.start! + this.diagnostic.length!,
 		);
 
 		if (diagnosticNode === null) {
-			throw new Error('Unmapped execution harness error: ' + this.diagnostic.messageText);
+			throw new Error('Unable to locate diagnostic node: ' + this.diagnostic.messageText);
 		}
 
 		// Get out diagnostic node and check if its our result or our defaultFunction call to map correctly back to user code file
 		if (
 			diagnosticNode === this.executionHarnessResultNode
 		) {
-			this.diagnostic.file = this.sources.get(`${USER_FILE_ALIAS}.ts`)!;
+			this.diagnostic.file = this.sources.get(USER_FILE_ALIAS)!;
 			const typeNode = this.defaultExportedFunctionNode.type!;
 			this.diagnostic.start = typeNode.getStart();
 			this.diagnostic.length = typeNode.getEnd() - typeNode.getStart();
@@ -553,7 +561,7 @@ export class ExecutionHarnessTypeError extends UserCodeTypeError {
 			||diagnosticNode === this.executionHarnessDefaultFunctionIdentifierNode
 			||diagnosticNode === this.executionHarnessArgumentsNode
 		) {
-			this.diagnostic.file = this.sources.get(`${USER_FILE_ALIAS}.ts`)!;
+			this.diagnostic.file = this.sources.get(USER_FILE_ALIAS)!;
 			const parameters = this.defaultExportedFunctionNode.parameters;
 			this.diagnostic.start = Math.min(...parameters.map(p => p.getStart()));
 			this.diagnostic.length = Math.max(...parameters.map(p => p.getEnd())) - this.diagnostic.start;
@@ -579,9 +587,9 @@ export class ExecutionHarnessTypeError extends UserCodeTypeError {
 
 	// Source code with surrounding lines to provide context to the error
 	public get sourceContext(): string {
-		const userFile = this.sources.get(`${USER_FILE_ALIAS}.ts`)!;
+		const userFile = this.sources.get(USER_FILE_ALIAS)!;
 		const diagnosticNode = UserCodeError.getDescendentAtLocation(
-			this.sources.get(`${EXECUTION_HARNESS_FILENAME}.ts`)!,
+			this.sources.get(EXECUTION_HARNESS_FILENAME)!,
 			this.diagnostic.start!,
 			this.diagnostic.start! + this.diagnostic.length!,
 		);
@@ -596,7 +604,7 @@ export class ExecutionHarnessTypeError extends UserCodeTypeError {
 	}
 
 	public get location(): { line: number; column: number } {
-		const location = this.sources.get(`${USER_FILE_ALIAS}.ts`)!.getLineAndCharacterOfPosition(this.diagnostic.start!);
+		const location = this.sources.get(USER_FILE_ALIAS)!.getLineAndCharacterOfPosition(this.diagnostic.start!);
 		return {
 			line: location.line,
 			column: location.character,
@@ -604,7 +612,7 @@ export class ExecutionHarnessTypeError extends UserCodeTypeError {
 	}
 
 	protected get defaultExportedFunctionNode(): ts.FunctionDeclaration {
-		const userFile = this.sources.get(`${USER_FILE_ALIAS}.ts`)!;
+		const userFile = this.sources.get(USER_FILE_ALIAS)!;
 		return userFile.statements.find(
 			s =>
 				s.kind === ts.SyntaxKind.FunctionDeclaration &&
@@ -614,7 +622,7 @@ export class ExecutionHarnessTypeError extends UserCodeTypeError {
 	}
 
 	protected get executionHarnessResultNode(): ts.Identifier {
-		const executionHarness = this.sources.get(`${EXECUTION_HARNESS_FILENAME}.ts`)!;
+		const executionHarness = this.sources.get(EXECUTION_HARNESS_FILENAME)!;
 		const expressionStatement = executionHarness.statements.find(
 			s =>
 				s.kind === ts.SyntaxKind.ExpressionStatement
@@ -624,7 +632,7 @@ export class ExecutionHarnessTypeError extends UserCodeTypeError {
 	}
 
 	protected get executionHarnessDefaultFunctionCallNode(): ts.CallExpression {
-		const executionHarness = this.sources.get(`${EXECUTION_HARNESS_FILENAME}.ts`)!;
+		const executionHarness = this.sources.get(EXECUTION_HARNESS_FILENAME)!;
 		const expressionStatement = executionHarness.statements.find(
 			s =>
 				s.kind === ts.SyntaxKind.ExpressionStatement
@@ -646,7 +654,7 @@ export class ExecutionHarnessTypeError extends UserCodeTypeError {
 	}
 
 	protected get argumentTypeNode(): ts.TypeNode {
-		const executionHarness = this.sources.get(`${EXECUTION_HARNESS_FILENAME}.ts`)!;
+		const executionHarness = this.sources.get(EXECUTION_HARNESS_FILENAME)!;
 		const moduleDeclaration = executionHarness.statements.find(
 			s => s.kind === ts.SyntaxKind.ModuleDeclaration,
 		)! as ts.ModuleDeclaration;
@@ -659,7 +667,7 @@ export class ExecutionHarnessTypeError extends UserCodeTypeError {
 	}
 
 	protected get outputTypeNode(): ts.TypeNode {
-		const executionHarness = this.sources.get(`${EXECUTION_HARNESS_FILENAME}.ts`)!;
+		const executionHarness = this.sources.get(EXECUTION_HARNESS_FILENAME)!;
 		const moduleDeclaration = executionHarness.statements.find(
 			s => s.kind === ts.SyntaxKind.ModuleDeclaration,
 		)! as ts.ModuleDeclaration;
@@ -686,4 +694,8 @@ function printTree(node: ts.Node | ts.Node[], level = 0): string {
 		returnString += printTree(child, level + 1);
 	}
 	return returnString;
+}
+
+function removeExt(pathname: string): string {
+	return path.basename(pathname).replace(path.extname(pathname), '');
 }

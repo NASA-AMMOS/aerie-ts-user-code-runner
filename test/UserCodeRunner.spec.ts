@@ -184,7 +184,7 @@ it('should return the final value', async () => {
 
 it('should accept additional source files', async () => {
   const userCode = `
-    import { importedFunction } from 'other-importable.js';
+    import { importedFunction } from 'other-importable';
     export default function myDSLFunction(thing: string): string {
       return someGlobalFunction(thing) + importedFunction(' world');
     }
@@ -336,4 +336,55 @@ test('Aerie undefined node test', async () => {
       location: { line: 8, column: 72 }
     }),
   ]));
-})
+});
+
+test('Aerie Scheduler test', async () => {
+  const userCode = `
+  export default function myGoal() {
+    return myHelper(ActivityTemplates.PeelBanana({ peelDirection: 'fromStem' }))
+  }
+  function myHelper(activityTemplate) {
+    return Goal.ActivityRecurrenceGoal({
+      activityTemplate,
+      interval: 60 * 60 * 1000 * 1000 // 1 hour in microseconds
+    })
+  }
+  `.trimTemplate();
+
+  const runner = new UserCodeRunner();
+  const [schedulerAst, schedulerEdsl, modelSpecific] = await Promise.all([
+    fs.promises.readFile(new URL('./inputs/scheduler-ast.ts', import.meta.url).pathname, 'utf8'),
+    fs.promises.readFile(new URL('./inputs/scheduler-edsl-fluent-api.ts', import.meta.url).pathname, 'utf8'),
+    fs.promises.readFile(new URL('./inputs/dsl-model-specific.ts', import.meta.url).pathname, 'utf8'),
+  ]);
+
+  const context = vm.createContext({
+  });
+  const result = await runner.executeUserCode(
+    userCode,
+    [],
+    'Goal',
+    [],
+    undefined,
+    [
+      ts.createSourceFile('scheduler-ast.ts', schedulerAst, ts.ScriptTarget.ESNext),
+      ts.createSourceFile('edsl.ts', schedulerEdsl, ts.ScriptTarget.ESNext),
+      ts.createSourceFile('model-specific.ts', modelSpecific, ts.ScriptTarget.ESNext),
+    ],
+    context,
+  );
+
+  expect(result.isOk()).toBe(true);
+  expect(result.unwrap()).toMatchObject({
+    goalSpecifier: {
+      activityTemplate: {
+        activityType: 'PeelBanana',
+        args: {
+          peelDirection: 'fromStem',
+        }
+      },
+      interval: 60 * 60 * 1000 * 1000,
+      kind: 'ActivityRecurrenceGoal',
+    }
+  });
+});
