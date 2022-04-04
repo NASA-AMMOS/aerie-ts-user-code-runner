@@ -22,18 +22,23 @@ Because we are transipiling and running the typescript code as modules in a vm, 
 ```node --experimental-vm-modules```
 
 ## Example
+
 ```ts
+import { UserCodeRunner } from './UserCodeRunner';
+
 const userCode = `
   export default function MyDSLFunction(thing: string): string {
     return thing + ' world';
   }
 `;
 
-const result = await executeUserCode(
-  userCode, // Actual user code
-  ['hello'], // Input arguments
-  'string', // Return type
-  ['string'], // Argument types
+const codeRunner = new UserCodeRunner();
+
+const result = await codeRunner.executeUserCode(
+        userCode, // Actual user code
+        ['hello'], // Input arguments
+        'string', // Return type
+        ['string'], // Argument types
 );
 
 expect(result.isOk()).toBeTruthy();
@@ -46,7 +51,7 @@ Error messaging is even more important when dealing with user code as you really
 ### Type Error Examples
 
 ```
-TypeError: Incorrect return type. Expected: 'number', Actual: 'string'.
+TypeError: TS2322 Incorrect return type. Expected: 'number', Actual: 'string'.
   at MyDSLFunction(0:54)
 >1| export default function MyDSLFunction(thing: string): string {
                                                           ~~~~~~
@@ -54,7 +59,7 @@ TypeError: Incorrect return type. Expected: 'number', Actual: 'string'.
 ```
 
 ```
-TypeError: Incorrect argument type. Expected: '[string]', Actual: '[string, number]'.
+TypeError: TS2554 Incorrect argument type. Expected: '[string]', Actual: '[string, number]'.
   at MyDSLFunction(0:38)
 >1| export default function MyDSLFunction(thing: string, other: number): string {
                                           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -63,7 +68,7 @@ TypeError: Incorrect argument type. Expected: '[string]', Actual: '[string, numb
 ```
 
 ```
-TypeError: Type 'string' is not assignable to type 'number'.
+TypeError: TS2322 Type 'string' is not assignable to type 'number'.
  1| export default function MyDSLFunction(thing: string): number {
 >2|   const other: number = 'hello';
             ~~~~~
@@ -82,21 +87,6 @@ Error: This is a test error
  8| }
 ```
 
-
-## API
-```ts
-async function executeUserCode<ArgsType extends any[], ReturnType = any>(
-  userCode: string, // User code as a string
-  args: ArgsType, // Input arguments
-  outputType: string = 'any', // Return type for typechecking
-  argsTypes: string[] = ['any'], // Argument types for typechecking
-  timeout: number = 5000, // Timeout in milliseconds
-  additionalSources: SourceFile[] = [], // Additional source files to include in the run time
-  context: vm.Context = vm.createContext(), // vm.Context to carry state between user code runs and inject globals
-): Promise<Result<ReturnType, UserCodeError[]>>
-```
-
-
 ## Usage Examples
 
 ## Simple Example
@@ -107,7 +97,9 @@ const userCode = `
   }
   `.trimTemplate();
 
-const result = await executeUserCode(
+const codeRunner = new UserCodeRunner();
+
+const result = await codeRunner.executeUserCode(
   userCode,
   ['hello'],
   'string',
@@ -118,7 +110,7 @@ expect(result.isOk()).toBeTruthy();
 expect(result.unwrap()).toBe('hello world');
 ```
 
-### Including other files for import and declaring some globals
+### Including other files for import, declaring some globals, and specified context
 ```ts
 const userCode = `
   import { importedFunction } from 'other-importable';
@@ -127,7 +119,9 @@ const userCode = `
   }
   `.trimTemplate();
 
-const result = await executeUserCode(
+const codeRunner = new UserCodeRunner();
+
+const result = await codeRunner.executeUserCode(
   userCode,
   ['hello'],
   'string',

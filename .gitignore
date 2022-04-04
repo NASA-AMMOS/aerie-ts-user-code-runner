@@ -4,3 +4,4 @@ ts-edsl.iml
 *.tsbuildinfo
 .DS_Store
 build
+docs
