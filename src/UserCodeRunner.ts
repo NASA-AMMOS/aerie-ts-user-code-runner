@@ -1,14 +1,15 @@
 import vm from 'vm';
 import crypto from 'crypto';
 import path from 'path';
-import {defaultErrorCodeMessageMappers} from './defaultErrorCodeMessageMappers.js';
-import {createMapDiagnosticMessage} from "./utils/errorMessageMapping";
-export {defaultErrorCodeMessageMappers} from './defaultErrorCodeMessageMappers.js';
+import { defaultErrorCodeMessageMappers } from './defaultErrorCodeMessageMappers.js';
+import { createMapDiagnosticMessage } from './utils/errorMessageMapping.js';
 import ts from 'typescript';
 import { parse } from 'stack-trace';
 import { BasicSourceMapConsumer, IndexedSourceMapConsumer, SourceMapConsumer } from 'source-map';
 import LRUCache from 'lru-cache';
 import { ERRORED, Result } from './utils/monads.js';
+
+export {defaultErrorCodeMessageMappers} from './defaultErrorCodeMessageMappers.js';
 
 const EXECUTION_HARNESS_FILENAME = '__execution_harness';
 const USER_FILE_ALIAS = '__user_file';
@@ -96,7 +97,6 @@ export class UserCodeRunner {
 
 		const executionCode = `
 			${additionalSourceFiles.map(file => {
-				const extName = path.extname(file.fileName);
 				if (file.fileName.endsWith('.d.ts')) return '';
 				const fileNameSansExt = removeExt(file.fileName);
 				return `import '${fileNameSansExt}';`;
