@@ -1,6 +1,5 @@
 /** None value */
-const None = Symbol('None');
-export type ERRORED = any;
+export const None = Symbol('None');
 
 /** Error with a message and contents */
 class ErrorWithContents<T> extends Error {
@@ -35,12 +34,12 @@ export class Result<T, E> {
   }
 
   /** Returns true if the result is Ok. */
-  public isOk(): this is Result<T, typeof None> {
+  public isOk(): this is Result<T, never> {
     return this.error === None && this.value !== None;
   }
 
   /** Returns true if the result is Err. */
-  public isErr(): this is Result<typeof None, E> {
+  public isErr(): this is Result<never, E> {
     return this.value === None && this.error !== None;
   }
 

@@ -7,69 +7,27 @@ import ts from 'typescript';
 import { parse } from 'stack-trace';
 import { BasicSourceMapConsumer, IndexedSourceMapConsumer, SourceMapConsumer } from 'source-map';
 import LRUCache from 'lru-cache';
-import { ERRORED, Result } from './utils/monads.js';
+import { Result } from './utils/monads.js';
 
 export {defaultErrorCodeMessageMappers} from './defaultErrorCodeMessageMappers.js';
 
 const EXECUTION_HARNESS_FILENAME = '__execution_harness';
-const USER_FILE_ALIAS = '__user_file';
+const USER_CODE_FILENAME = '__user_file';
 
-// Fill in the missing module vm types
-declare module 'vm' {
-	export class Module {
-		dependencySpecifiers: string[];
-		error: any;
-		identifier: string;
-		namespace: unknown; // GetModuleNamespace;
-		status: 'unlinked' | 'linking' | 'linked' | 'evaluating' | 'evaluated' | 'errored';
-
-		evaluate(options?: { timeout?: number; breakOnSigInt?: boolean }): Promise<undefined>;
-
-		link(
-			linker: (
-				specifier: string,
-				extra: { assert?: { [key: string]: any } },
-				referencingModule: vm.Module,
-			) => vm.Module | Promise<vm.Module>,
-		): void;
-	}
-
-	export class SourceTextModule extends Module {
-		public constructor(
-			code: string,
-			options?: {
-				identifier?: string;
-				cachedData?: Buffer | NodeJS.TypedArray | DataView;
-				context?: vm.Context;
-				lineOffset?: number;
-				columnOffset?: number;
-				initializeImportMeta?: {
-					meta?: any;
-					module?: vm.SourceTextModule;
-				};
-				importModuleDynamically?: (specifier: string, importMeta: any) => Promise<vm.Module>;
-			},
-		);
-
-		createCachedData(): Buffer;
-	}
-}
-
-interface CacheItem {
+export interface CacheItem {
 	jsFileMap: Map<string, ts.SourceFile>;
 	tsFileMap: Map<string, ts.SourceFile>;
 	sourceMap: BasicSourceMapConsumer | IndexedSourceMapConsumer;
 }
 
 export interface UserCodeRunnerOptions {
-	cache?: boolean;
 	cacheOptions?: LRUCache.Options<string, CacheItem>;
 	typeErrorCodeMessageMappers?: {[errorCode: number]: (message: string) => string | undefined },// The error code to message mappers
 }
 
 export class UserCodeRunner {
-	private user_file_cache: LRUCache<string, CacheItem>;
-	private mapDiagnosticMessage: ReturnType<typeof createMapDiagnosticMessage>;
+	private readonly user_file_cache: LRUCache<string, CacheItem>;
+	private readonly mapDiagnosticMessage: ReturnType<typeof createMapDiagnosticMessage>;
 
 	constructor(options?: UserCodeRunnerOptions) {
 		this.user_file_cache = new LRUCache<string, CacheItem>({
@@ -86,9 +44,9 @@ export class UserCodeRunner {
 		argsTypes: string[] = ['any'],
 		additionalSourceFiles: ts.SourceFile[] = [],
 	): Promise<Result<CacheItem, UserCodeError[]>> {
-		// Typecheck and transpile code
+		// TypeCheck and transpile code
 		const userSourceFile = ts.createSourceFile(
-			USER_FILE_ALIAS,
+			USER_CODE_FILENAME,
 			userCode,
 			ts.ScriptTarget.ESNext,
 			undefined,
@@ -101,13 +59,13 @@ export class UserCodeRunner {
 				const fileNameSansExt = removeExt(file.fileName);
 				return `import '${fileNameSansExt}';`;
 			}).join('\n  ')}
-      import defaultExport from '${USER_FILE_ALIAS}';
+      import defaultExport from '${USER_CODE_FILENAME}';
             
       declare global {
-        const args: [${argsTypes.join(', ')}];
-        let result: ${outputType};
+        const __args: [${argsTypes.join(', ')}];
+        let __result: ${outputType};
       }
-      result = defaultExport(...args);
+      __result = defaultExport(...__args);
     `;
 
 		const executionSourceFile = ts.createSourceFile(
@@ -120,7 +78,7 @@ export class UserCodeRunner {
 
 		const tsFileMap = new Map<string, ts.SourceFile>();
 
-		tsFileMap.set(USER_FILE_ALIAS, userSourceFile);
+		tsFileMap.set(USER_CODE_FILENAME, userSourceFile);
 		tsFileMap.set(EXECUTION_HARNESS_FILENAME, executionSourceFile);
 
 		for (const additionalSourceFile of additionalSourceFiles) {
@@ -189,7 +147,7 @@ export class UserCodeRunner {
 
 		const emitResult = program.emit();
 
-		const sourceMap = await new SourceMapConsumer(sourceMapMap.get(USER_FILE_ALIAS)!.text);
+		const sourceMap = await new SourceMapConsumer(sourceMapMap.get(USER_CODE_FILENAME)!.text);
 
 		for (const diagnostic of emitResult.diagnostics) {
 			if (diagnostic.file) {
@@ -227,7 +185,7 @@ export class UserCodeRunner {
 			const result = await this.preProcess(userCode, outputType, argsTypes, additionalSourceFiles);
 
 			if (result.isErr()) {
-				return result as Result<ERRORED, UserCodeError[]>;
+				return result;
 			}
 			this.user_file_cache.set(userCodeHash, result.unwrap());
 		}
@@ -235,8 +193,8 @@ export class UserCodeRunner {
 		const { jsFileMap, tsFileMap, sourceMap } = this.user_file_cache.get(userCodeHash)!;
 
 		// Put args and result into context
-		context.args = args;
-		context.result = undefined;
+		context.__args = args;
+		context.__result = undefined;
 
 		// Create modules for VM
 		const moduleCache = new Map<string, vm.Module>();
@@ -261,7 +219,7 @@ export class UserCodeRunner {
 			await harnessModule.evaluate({
 				timeout,
 			});
-			return Result.Ok(context.result);
+			return Result.Ok(context.__result);
 		} catch (error: any) {
 			return Result.Err([UserCodeRuntimeError.new(error as Error, sourceMap, tsFileMap)]);
 		}
@@ -413,7 +371,7 @@ export class UserCodeTypeError extends UserCodeError {
 	}
 
 	public get stack(): string {
-		const userFile = this.sources.get(USER_FILE_ALIAS)!;
+		const userFile = this.sources.get(USER_CODE_FILENAME)!;
 		const diagnosticNode = UserCodeError.getDescendentAtLocation(userFile, this.diagnostic.start!, this.diagnostic.start! + this.diagnostic.length!);
 		if (diagnosticNode === null) {
 			throw new Error(`Could not find node for diagnostic ${this.diagnostic.messageText}`);
@@ -429,14 +387,14 @@ export class UserCodeTypeError extends UserCodeError {
 	public get sourceContext(): string {
 		const start = this.diagnostic.start!;
 		const end = this.diagnostic.start! + this.diagnostic.length!;
-		return UserCodeTypeError.underlineRanges(this.sources.get(USER_FILE_ALIAS)!, [[start, end]]);
+		return UserCodeTypeError.underlineRanges(this.sources.get(USER_CODE_FILENAME)!, [[start, end]]);
 	}
 
 	public get location(): { line: number; column: number } {
 		if (this.diagnostic.start === undefined) {
 			throw new Error('Could not find start position');
 		}
-		const location = this.sources.get(USER_FILE_ALIAS)!.getLineAndCharacterOfPosition(this.diagnostic.start);
+		const location = this.sources.get(USER_CODE_FILENAME)!.getLineAndCharacterOfPosition(this.diagnostic.start);
 		return {
 			line: location.line,
 			column: location.character,
@@ -475,24 +433,24 @@ export class UserCodeRuntimeError extends UserCodeError {
 	public get stack(): string {
 		const stack = parse(this.error);
 		const stackWithoutHarness = stack
-			.filter(callsite => callsite.getFileName()?.endsWith(USER_FILE_ALIAS))
-			.filter(callsite => {
-				if (callsite.getFileName() === undefined) {
+			.filter(callSite => callSite.getFileName()?.endsWith(USER_CODE_FILENAME))
+			.filter(callSite => {
+				if (callSite.getFileName() === undefined) {
 					return false;
 				}
 				const mappedLocation = this.sourceMap.originalPositionFor({
-					line: callsite.getLineNumber()!,
-					column: callsite.getColumnNumber()!,
+					line: callSite.getLineNumber()!,
+					column: callSite.getColumnNumber()!,
 				});
 				return mappedLocation.line !== null;
 			});
 		return stackWithoutHarness
-			.map(callsite => {
+			.map(callSite => {
 				const mappedLocation = this.sourceMap.originalPositionFor({
-					line: callsite.getLineNumber()!,
-					column: callsite.getColumnNumber()!,
+					line: callSite.getLineNumber()!,
+					column: callSite.getColumnNumber()!,
 				});
-				const functionName = callsite.getFunctionName();
+				const functionName = callSite.getFunctionName();
 				const lineNumber = mappedLocation.line;
 				const columnNumber = mappedLocation.column;
 				return 'at ' + functionName + '(' + lineNumber + ':' + columnNumber + ')';
@@ -503,7 +461,7 @@ export class UserCodeRuntimeError extends UserCodeError {
 	// Source code with surrounding lines to provide context to the error
 	public get sourceContext(): string {
 		return UserCodeRuntimeError.displayLineWithContext(
-			this.tsFileCache.get(USER_FILE_ALIAS)!.text,
+			this.tsFileCache.get(USER_CODE_FILENAME)!.text,
 			this.location.line,
 		);
 	}
@@ -547,11 +505,11 @@ export class ExecutionHarnessTypeError extends UserCodeTypeError {
 			throw new Error('Unable to locate diagnostic node: ' + this.diagnostic.messageText);
 		}
 
-		// Get out diagnostic node and check if its our result or our defaultFunction call to map correctly back to user code file
+		// Check if the diagnostic node matches known nodes and map correctly back to user code file accordingly
 		if (
 			diagnosticNode === this.executionHarnessResultNode
 		) {
-			this.diagnostic.file = this.sources.get(USER_FILE_ALIAS)!;
+			this.diagnostic.file = this.sources.get(USER_CODE_FILENAME)!;
 			const typeNode = this.defaultExportedFunctionNode.type!;
 			this.diagnostic.start = typeNode.getStart();
 			this.diagnostic.length = typeNode.getEnd() - typeNode.getStart();
@@ -561,7 +519,7 @@ export class ExecutionHarnessTypeError extends UserCodeTypeError {
 			||diagnosticNode === this.executionHarnessDefaultFunctionIdentifierNode
 			||diagnosticNode === this.executionHarnessArgumentsNode
 		) {
-			this.diagnostic.file = this.sources.get(USER_FILE_ALIAS)!;
+			this.diagnostic.file = this.sources.get(USER_CODE_FILENAME)!;
 			const parameters = this.defaultExportedFunctionNode.parameters;
 			this.diagnostic.start = Math.min(...parameters.map(p => p.getStart()));
 			this.diagnostic.length = Math.max(...parameters.map(p => p.getEnd())) - this.diagnostic.start;
@@ -587,7 +545,7 @@ export class ExecutionHarnessTypeError extends UserCodeTypeError {
 
 	// Source code with surrounding lines to provide context to the error
 	public get sourceContext(): string {
-		const userFile = this.sources.get(USER_FILE_ALIAS)!;
+		const userFile = this.sources.get(USER_CODE_FILENAME)!;
 		const diagnosticNode = UserCodeError.getDescendentAtLocation(
 			this.sources.get(EXECUTION_HARNESS_FILENAME)!,
 			this.diagnostic.start!,
@@ -604,7 +562,7 @@ export class ExecutionHarnessTypeError extends UserCodeTypeError {
 	}
 
 	public get location(): { line: number; column: number } {
-		const location = this.sources.get(USER_FILE_ALIAS)!.getLineAndCharacterOfPosition(this.diagnostic.start!);
+		const location = this.sources.get(USER_CODE_FILENAME)!.getLineAndCharacterOfPosition(this.diagnostic.start!);
 		return {
 			line: location.line,
 			column: location.character,
@@ -612,7 +570,7 @@ export class ExecutionHarnessTypeError extends UserCodeTypeError {
 	}
 
 	protected get defaultExportedFunctionNode(): ts.FunctionDeclaration {
-		const userFile = this.sources.get(USER_FILE_ALIAS)!;
+		const userFile = this.sources.get(USER_CODE_FILENAME)!;
 		return userFile.statements.find(
 			s =>
 				s.kind === ts.SyntaxKind.FunctionDeclaration &&
@@ -698,4 +656,47 @@ function printTree(node: ts.Node | ts.Node[], level = 0): string {
 
 function removeExt(pathname: string): string {
 	return path.basename(pathname).replace(path.extname(pathname), '');
+}
+
+// Fill in the missing module vm types
+// These were created from the node documentation
+// https://nodejs.org/api/vm.html#class-vmmodule
+declare module 'vm' {
+	export class Module {
+		dependencySpecifiers: string[];
+		error: any;
+		identifier: string;
+		namespace: unknown; // GetModuleNamespace;
+		status: 'unlinked' | 'linking' | 'linked' | 'evaluating' | 'evaluated' | 'errored';
+
+		evaluate(options?: { timeout?: number; breakOnSigInt?: boolean }): Promise<undefined>;
+
+		link(
+			linker: (
+				specifier: string,
+				extra: { assert?: { [key: string]: any } },
+				referencingModule: vm.Module,
+			) => vm.Module | Promise<vm.Module>,
+		): void;
+	}
+
+	export class SourceTextModule extends Module {
+		public constructor(
+			code: string,
+			options?: {
+				identifier?: string;
+				cachedData?: Buffer | NodeJS.TypedArray | DataView;
+				context?: vm.Context;
+				lineOffset?: number;
+				columnOffset?: number;
+				initializeImportMeta?: {
+					meta?: any;
+					module?: vm.SourceTextModule;
+				};
+				importModuleDynamically?: (specifier: string, importMeta: any) => Promise<vm.Module>;
+			},
+		);
+
+		createCachedData(): Buffer;
+	}
 }
