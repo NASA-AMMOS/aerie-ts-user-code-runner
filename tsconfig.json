@@ -112,4 +112,12 @@
     "./build",
     "**/*.spec.ts"
   ],
+  "typedocOptions": {
+    "out": "docs",
+    "readme": "README.md",
+    "entryPointStrategy": "expand",
+    "exclude": "*.spec",
+    "entryPoints": ["./src"],
+    "darkHighlightTheme": "one-dark-pro"
+  }
 }
