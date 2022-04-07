@@ -74,11 +74,11 @@ it('should produce return type errors', async () => {
     TypeError: TS2322 Incorrect return type. Expected: 'number', Actual: 'string'.
     `.trimTemplate());
   expect(result.unwrapErr()[0].stack).toBe(`
-    at MyDSLFunction(0:54)
+    at MyDSLFunction(1:55)
     `.trimTemplate())
   expect(result.unwrapErr()[0].location).toMatchObject({
-    line: 0,
-    column: 54,
+    line: 1,
+    column: 55,
   });
   expect(result.unwrapErr()[0].sourceContext).toBe(`
     >1| export default function MyDSLFunction(thing: string): string {
@@ -113,16 +113,146 @@ it('should produce input type errors', async () => {
     TypeError: TS2554 Incorrect argument type. Expected: '[string]', Actual: '[string, number]'.
     `.trimTemplate());
   expect(result.unwrapErr()[0].stack).toBe(`
-    at MyDSLFunction(0:38)
+    at MyDSLFunction(1:39)
     `.trimTemplate())
   expect(result.unwrapErr()[0].location).toMatchObject({
-    line: 0,
-    column: 38,
+    line: 1,
+    column: 39,
   });
   expect(result.unwrapErr()[0].sourceContext).toBe(`
     >1| export default function MyDSLFunction(thing: string, other: number): string {
                                               ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
      2|   subroutine();
+    `.trimTemplate());
+});
+
+it('should handle no default export errors', async () => {
+  const userCode = `
+    export function MyDSLFunction(thing: string, other: number): string {
+      subroutine();
+      return thing + ' world';
+    }
+    
+    function subroutine() {
+      throw new Error('This is a test error');
+    }
+    `.trimTemplate();
+
+  const runner = new UserCodeRunner();
+
+  const result = await runner.executeUserCode(
+    userCode,
+    ['hello'],
+    'string',
+    ['string'],
+  );
+
+  expect(result.isErr()).toBeTruthy();
+  expect(result.unwrapErr()[0].message).toBe(`
+    TypeError: TS1192 No default export. Expected a default export with the signature: "(...args: [string]) => string".
+    `.trimTemplate());
+  expect(result.unwrapErr()[0].stack).toBe(`
+    at (1:1)
+    `.trimTemplate())
+  expect(result.unwrapErr()[0].location).toMatchObject({
+    line: 1,
+    column: 1,
+  });
+  expect(result.unwrapErr()[0].sourceContext).toBe(`
+     1| export function MyDSLFunction(thing: string, other: number): string {
+     2|   subroutine();
+     3|   return thing + ' world';
+     4| }
+     5| 
+     6| function subroutine() {
+     7|   throw new Error('This is a test error');
+     8| }
+    `.trimTemplate());
+});
+
+it('should handle no export errors', async () => {
+  const userCode = `
+    function MyDSLFunction(thing: string, other: number): string {
+      subroutine();
+      return thing + ' world';
+    }
+    
+    function subroutine() {
+      throw new Error('This is a test error');
+    }
+    `.trimTemplate();
+
+  const runner = new UserCodeRunner();
+
+  const result = await runner.executeUserCode(
+    userCode,
+    ['hello'],
+    'string',
+    ['string'],
+  );
+
+  expect(result.isErr()).toBeTruthy();
+  expect(result.unwrapErr()[0].message).toBe(`
+    TypeError: TS2306 No exports. Expected a default export with the signature: "(...args: [string]) => string".
+    `.trimTemplate());
+  expect(result.unwrapErr()[0].stack).toBe(`
+    at (1:1)
+    `.trimTemplate())
+  expect(result.unwrapErr()[0].location).toMatchObject({
+    line: 1,
+    column: 1,
+  });
+  expect(result.unwrapErr()[0].sourceContext).toBe(`
+     1| function MyDSLFunction(thing: string, other: number): string {
+     2|   subroutine();
+     3|   return thing + ' world';
+     4| }
+     5| 
+     6| function subroutine() {
+     7|   throw new Error('This is a test error');
+     8| }
+    `.trimTemplate());
+});
+
+it('should handle default export not function errors', async () => {
+  const userCode = `
+    const hello = 'hello';
+    export default hello;
+    function MyDSLFunction(thing: string, other: number): string {
+      subroutine();
+      return thing + ' world';
+    }
+    
+    function subroutine() {
+      throw new Error('This is a test error');
+    }
+    `.trimTemplate();
+
+  const runner = new UserCodeRunner();
+
+  const result = await runner.executeUserCode(
+    userCode,
+    ['hello'],
+    'string',
+    ['string'],
+  );
+
+  expect(result.isErr()).toBeTruthy();
+  expect(result.unwrapErr()[0].message).toBe(`
+    TypeError: TS2349 Default export is not callable. Expected a default export with the signature: "(...args: [string]) => string".
+    `.trimTemplate());
+  expect(result.unwrapErr()[0].stack).toBe(`
+    at (2:1)
+    `.trimTemplate())
+  expect(result.unwrapErr()[0].location).toMatchObject({
+    line: 2,
+    column: 1,
+  });
+  expect(result.unwrapErr()[0].sourceContext).toBe(`
+     1| const hello = 'hello';
+    >2| export default hello;
+        ~~~~~~~~~~~~~~~~~~~~~
+     3| function MyDSLFunction(thing: string, other: number): string {
     `.trimTemplate());
 });
 
@@ -148,11 +278,11 @@ it('should produce internal type errors', async () => {
     TypeError: TS2322 Type 'string' is not assignable to type 'number'.
     `.trimTemplate());
   expect(result.unwrapErr()[0].stack).toBe(`
-    at MyDSLFunction(1:8)
+    at MyDSLFunction(2:9)
     `.trimTemplate())
   expect(result.unwrapErr()[0].location).toMatchObject({
-    line: 1,
-    column: 8,
+    line: 2,
+    column: 9,
   });
   expect(result.unwrapErr()[0].sourceContext).toBe(`
      1| export default function MyDSLFunction(thing: string): number {
@@ -301,39 +431,42 @@ test('Aerie undefined node test', async () => {
   expect(result.unwrapErr()).toMatchObject(expect.arrayContaining([
     expect.objectContaining({
       message: "TypeError: TS2322 Incorrect return type. Expected: 'Command[] | Command | null', Actual: 'ExpansionReturn'.",
-      stack: 'at BakeBananaBreadExpansionLogic(5:3)',
+      stack: 'at BakeBananaBreadExpansionLogic(6:4)',
       sourceContext: ' 5|   context: Context\n' +
         '>6| ): ExpansionReturn {\n' +
         '       ~~~~~~~~~~~~~~~\n' +
         ' 7|   return [',
-      location: { line: 5, column: 3 }
+      location: { line: 6, column: 4 }
     }),
     expect.objectContaining({
       message: "TypeError: TS2339 Property 'temperature' does not exist on type 'ParameterTest'.",
-      stack: 'at BakeBananaBreadExpansionLogic(7:40)',
-      sourceContext: ' 7|   return [\n' +
+      stack: 'at BakeBananaBreadExpansionLogic(8:41)',
+      sourceContext:
+        ' 7|   return [\n' +
         '>8|     PREHEAT_OVEN(props.activityInstance.temperature),\n' +
         '                                            ~~~~~~~~~~~\n' +
         ' 9|     PREPARE_LOAF(props.activityInstance.tbSugar, props.activityInstance.glutenFree),',
-      location: { line: 7, column: 40 }
+      location: { line: 8, column: 41 }
     }),
     expect.objectContaining({
       message: "TypeError: TS2339 Property 'tbSugar' does not exist on type 'ParameterTest'.",
-      stack: 'at BakeBananaBreadExpansionLogic(8:40)',
-      sourceContext: ' 8|     PREHEAT_OVEN(props.activityInstance.temperature),\n' +
+      stack: 'at BakeBananaBreadExpansionLogic(9:41)',
+      sourceContext:
+        ' 8|     PREHEAT_OVEN(props.activityInstance.temperature),\n' +
         '>9|     PREPARE_LOAF(props.activityInstance.tbSugar, props.activityInstance.glutenFree),\n' +
         '                                            ~~~~~~~\n' +
         ' 10|     BAKE_BREAD,',
-      location: { line: 8, column: 40 }
+      location: { line: 9, column: 41 }
     }),
     expect.objectContaining({
       message: "TypeError: TS2339 Property 'glutenFree' does not exist on type 'ParameterTest'.",
-      stack: 'at BakeBananaBreadExpansionLogic(8:72)',
-      sourceContext: ' 8|     PREHEAT_OVEN(props.activityInstance.temperature),\n' +
+      stack: 'at BakeBananaBreadExpansionLogic(9:73)',
+      sourceContext:
+        ' 8|     PREHEAT_OVEN(props.activityInstance.temperature),\n' +
         '>9|     PREPARE_LOAF(props.activityInstance.tbSugar, props.activityInstance.glutenFree),\n' +
         '                                                                            ~~~~~~~~~~\n' +
         ' 10|     BAKE_BREAD,',
-      location: { line: 8, column: 72 }
+      location: { line: 9, column: 73 }
     }),
   ]));
 });

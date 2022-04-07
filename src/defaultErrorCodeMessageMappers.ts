@@ -1,4 +1,4 @@
-
+// See error code index here https://github.com/Microsoft/TypeScript/blob/main/src/compiler/diagnosticMessages.json
 const REGEX_2792 = /([^\n]+) Did you mean to set the 'moduleResolution' option to 'node', or to add aliases to the 'paths' option\?/;
 
 export const defaultErrorCodeMessageMappers: {
@@ -9,6 +9,7 @@ export const defaultErrorCodeMessageMappers: {
     if (match !== null) {
       return match[1];
     }
+    return msg;
   },
 };
 
