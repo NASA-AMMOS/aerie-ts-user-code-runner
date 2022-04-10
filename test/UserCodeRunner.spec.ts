@@ -521,3 +521,59 @@ test('Aerie Scheduler test', async () => {
     }
   });
 });
+
+test('Aerie Scheduler TS2345 regression test', async () => {
+  const userCode = `
+  export default function myGoal() {
+    return myHelper(ActivityTemplates.PeelBanana({ peelDirection: 'fromStem' }))
+  }
+  function myHelper(activityTemplate) {
+    return Goal.ActivityRecurrenceGoal({
+      activityTemplate,
+      interval: 60 * 60 * 1000 * 1000 // 1 hour in microseconds
+    })
+  }
+  `.trimTemplate();
+
+  const runner = new UserCodeRunner();
+  const [schedulerAst, schedulerEdsl, modelSpecific] = await Promise.all([
+    fs.promises.readFile(new URL('./inputs/scheduler-ast.ts', import.meta.url).pathname, 'utf8'),
+    fs.promises.readFile(new URL('./inputs/scheduler-edsl-fluent-api.ts', import.meta.url).pathname, 'utf8'),
+    fs.promises.readFile(new URL('./inputs/dsl-model-specific--2345.ts', import.meta.url).pathname, 'utf8'),
+  ]);
+
+  const context = vm.createContext({
+  });
+  const result = await runner.executeUserCode(
+    userCode,
+    [],
+    'Goal',
+    [],
+    undefined,
+    [
+      ts.createSourceFile('scheduler-ast.ts', schedulerAst, ts.ScriptTarget.ESNext),
+      ts.createSourceFile('edsl.ts', schedulerEdsl, ts.ScriptTarget.ESNext),
+      ts.createSourceFile('model-specific.ts', modelSpecific, ts.ScriptTarget.ESNext),
+    ],
+    context,
+  );
+
+  expect(result.isErr()).toBeTruthy();
+  expect(result.unwrapErr()[0].message).toBe(`
+    TypeError: TS2345 Argument of type '{ peelDirection: "fromStem"; }' is not assignable to parameter of type '{ duration: number; fancy: { subfield1: string; subfield2: { subsubfield1: number; }[]; }; peelDirection: "fromTip" | "fromStem"; }'.
+      Type '{ peelDirection: "fromStem"; }' is missing the following properties from type '{ duration: number; fancy: { subfield1: string; subfield2: { subsubfield1: number; }[]; }; peelDirection: "fromTip" | "fromStem"; }': duration, fancy
+    `.trimTemplate());
+  expect(result.unwrapErr()[0].stack).toBe(`
+    at myGoal(2:48)
+    `.trimTemplate())
+  expect(result.unwrapErr()[0].location).toMatchObject({
+    line: 2,
+    column: 48,
+  });
+  expect(result.unwrapErr()[0].sourceContext).toBe(`
+     1| export default function myGoal() {
+    >2|   return myHelper(ActivityTemplates.PeelBanana({ peelDirection: 'fromStem' }))
+                                                       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+     3| }
+    `.trimTemplate());
+});
