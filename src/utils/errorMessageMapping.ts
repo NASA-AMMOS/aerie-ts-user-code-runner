@@ -1,11 +1,11 @@
 import type ts from "typescript";
 
 function callMapper(msg: string, code: number, errorCodeMessageMappers: {[errorCode: number]: (message: string) => string | undefined}): string {
-  const mesageMapper = errorCodeMessageMappers[code];
-  if (mesageMapper === undefined) {
+  const messageMapper = errorCodeMessageMappers[code];
+  if (messageMapper === undefined) {
     return msg;
   }
-  const mappedMessage = mesageMapper(msg);
+  const mappedMessage = messageMapper(msg);
   if (mappedMessage === undefined) {
     throw new Error(`Insufficient message mapper found for ts diagnostic code ${code}`);
   }
@@ -20,9 +20,12 @@ export function createMapDiagnosticMessage(errorCodeMessageMappers: {[errorCode:
         throw new Error('Must provide a code when mapping a string message');
       }
       errorMessages.push(callMapper(msg, code, errorCodeMessageMappers));
-    } else if (msg.next) {
-      for (const next of msg.next) {
-        errorMessages = errorMessages.concat(mapDiagnosticMessageChain(next, next.code));
+    } else {
+      errorMessages.push(callMapper(msg.messageText, msg.code, errorCodeMessageMappers));
+      if (msg.next) {
+        for (const next of msg.next) {
+          errorMessages = errorMessages.concat(mapDiagnosticMessageChain(next, next.code).map(m => `  ${m}`));
+        }
       }
     }
     return errorMessages;
