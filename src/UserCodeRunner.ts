@@ -561,9 +561,26 @@ export class ExecutionHarnessTypeError extends UserCodeTypeError {
 		) {
 			this.diagnostic.file = this.sources.get(USER_CODE_FILENAME)!;
 			const typeNode = this.defaultExportedFunctionNode!.type!;
-			this.diagnostic.start = typeNode.getStart();
-			this.diagnostic.length = typeNode.getEnd() - typeNode.getStart();
-			this.diagnostic.messageText = `Incorrect return type. Expected: '${this.outputTypeNode.getText()}', Actual: '${this.defaultExportedFunctionNode!.type!.getText()}'.`;
+			// No type annotation on default exported function
+			if (typeNode === undefined) {
+				if (this.diagnostic.code === 2322) {
+					const message = typeof this.diagnostic.messageText === 'string' ? this.diagnostic.messageText : this.diagnostic.messageText.messageText;
+					const match = /Type '(.+)' is not assignable to type '.+'./.exec(message);
+					if (match === null) {
+						throw new Error(`Unmapped execution harness error: ${this.diagnostic.file?.fileName} TS${this.diagnostic.code} ${ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n')}`);
+					}
+					this.diagnostic.file = this.sources.get(USER_CODE_FILENAME)!;
+					this.diagnostic.start = this.defaultExportedFunctionReturnNode!.getStart();
+					this.diagnostic.length = this.defaultExportedFunctionReturnNode!.getEnd() - this.defaultExportedFunctionReturnNode!.getStart();
+					this.diagnostic.messageText = `Incorrect return type. Expected: '${this.outputTypeNode.getText()}', Actual: '${match[1]}'.`;
+				} else {
+					throw new Error(`Unmapped execution harness error: ${this.diagnostic.file?.fileName} TS${this.diagnostic.code} ${ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n')}`);
+				}
+			} else {
+				this.diagnostic.start = typeNode.getStart();
+				this.diagnostic.length = typeNode.getEnd() - typeNode.getStart();
+				this.diagnostic.messageText = `Incorrect return type. Expected: '${this.outputTypeNode.getText()}', Actual: '${this.defaultExportedFunctionNode!.type!.getText()}'.`;
+			}
 		}
 		// Errors in the calling of user code default export
 		else if (
@@ -659,6 +676,11 @@ export class ExecutionHarnessTypeError extends UserCodeTypeError {
 				s.modifiers?.some(m => m.kind === ts.SyntaxKind.ExportKeyword) &&
 				s.modifiers?.some(m => m.kind === ts.SyntaxKind.DefaultKeyword),
 		)! as ts.FunctionDeclaration;
+	}
+
+	protected get defaultExportedFunctionReturnNode() {
+		const defaultExportedFunctionNode = this.defaultExportedFunctionNode!;
+		return UserCodeError.getDescendentNodeOfType(defaultExportedFunctionNode.body!, ts.SyntaxKind.ReturnStatement);
 	}
 
 	protected get executionHarnessResultNode(): ts.Identifier {

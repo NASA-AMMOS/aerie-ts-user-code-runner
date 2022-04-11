@@ -474,7 +474,11 @@ test('Aerie undefined node test', async () => {
 test('Aerie Scheduler test', async () => {
   const userCode = `
   export default function myGoal() {
-    return myHelper(ActivityTemplates.PeelBanana({ peelDirection: 'fromStem' }))
+    return myHelper(ActivityTemplates.PeelBanana({
+      peelDirection: 'fromStem',
+      fancy: { subfield1: 'value1', subfield2: [{ subsubfield1: 1.0, } ], },
+      duration: 60 * 60 * 1000 * 1000,
+    }))
   }
   function myHelper(activityTemplate) {
     return Goal.ActivityRecurrenceGoal({
@@ -501,13 +505,12 @@ test('Aerie Scheduler test', async () => {
     undefined,
     [
       ts.createSourceFile('scheduler-ast.ts', schedulerAst, ts.ScriptTarget.ESNext),
-      ts.createSourceFile('edsl.ts', schedulerEdsl, ts.ScriptTarget.ESNext),
+      ts.createSourceFile('scheduler-edsl-fluent-api.ts', schedulerEdsl, ts.ScriptTarget.ESNext),
       ts.createSourceFile('model-specific.ts', modelSpecific, ts.ScriptTarget.ESNext),
     ],
     context,
   );
 
-  expect(result.isOk()).toBe(true);
   expect(result.unwrap()).toMatchObject({
     goalSpecifier: {
       activityTemplate: {
@@ -552,7 +555,7 @@ test('Aerie Scheduler TS2345 regression test', async () => {
     undefined,
     [
       ts.createSourceFile('scheduler-ast.ts', schedulerAst, ts.ScriptTarget.ESNext),
-      ts.createSourceFile('edsl.ts', schedulerEdsl, ts.ScriptTarget.ESNext),
+      ts.createSourceFile('scheduler-edsl-fluent-api.ts', schedulerEdsl, ts.ScriptTarget.ESNext),
       ts.createSourceFile('model-specific.ts', modelSpecific, ts.ScriptTarget.ESNext),
     ],
     context,
@@ -577,3 +580,52 @@ test('Aerie Scheduler TS2345 regression test', async () => {
      3| }
     `.trimTemplate());
 });
+
+test("Aerie Scheduler wrong return type no annotation regression test", async () => {
+  const userCode = `
+  export default function myGoal() {
+    return 5
+  }
+  `.trimTemplate();
+
+  const runner = new UserCodeRunner();
+  const [schedulerAst, schedulerEdsl, modelSpecific] = await Promise.all([
+    fs.promises.readFile(new URL('./inputs/scheduler-ast.ts', import.meta.url).pathname, 'utf8'),
+    fs.promises.readFile(new URL('./inputs/scheduler-edsl-fluent-api.ts', import.meta.url).pathname, 'utf8'),
+    fs.promises.readFile(new URL('./inputs/dsl-model-specific.ts', import.meta.url).pathname, 'utf8'),
+  ]);
+
+  const context = vm.createContext({
+  });
+  const result = await runner.executeUserCode(
+    userCode,
+    [],
+    'Goal',
+    [],
+    undefined,
+    [
+      ts.createSourceFile('scheduler-ast.ts', schedulerAst, ts.ScriptTarget.ESNext),
+      ts.createSourceFile('scheduler-edsl-fluent-api.ts', schedulerEdsl, ts.ScriptTarget.ESNext),
+      ts.createSourceFile('model-specific.ts', modelSpecific, ts.ScriptTarget.ESNext),
+    ],
+    context,
+  );
+
+  expect(result.isErr()).toBeTruthy();
+  expect(result.unwrapErr()[0].message).toBe(`
+    TypeError: TS2322 Incorrect return type. Expected: 'Goal', Actual: 'number'.
+    `.trimTemplate());
+  expect(result.unwrapErr()[0].stack).toBe(`
+    at myGoal(2:3)
+    `.trimTemplate())
+  expect(result.unwrapErr()[0].location).toMatchObject({
+    line: 2,
+    column: 3,
+  });
+  expect(result.unwrapErr()[0].sourceContext).toBe(`
+     1| export default function myGoal() {
+    >2|   return 5
+          ~~~~~~~~
+     3| }
+    `.trimTemplate());
+})

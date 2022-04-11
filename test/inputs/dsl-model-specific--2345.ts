@@ -1,4 +1,5 @@
 /** Start Codegen */
+import type { ActivityTemplate } from './scheduler-edsl-fluent-api.js';
 interface PeelBanana extends ActivityTemplate {}
 export const ActivityTemplates = {
 	PeelBanana: function PeelBanana(
