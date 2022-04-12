@@ -30,6 +30,7 @@ it('should produce runtime errors', async () => {
   );
 
   expect(result.isErr()).toBeTruthy();
+  expect(result.unwrapErr().length).toBe(1);
   expect(result.unwrapErr()[0].message).toBe(`
     Error: This is a test error
     `.trimTemplate());
@@ -70,6 +71,7 @@ it('should produce return type errors', async () => {
   );
 
   expect(result.isErr()).toBeTruthy();
+  expect(result.unwrapErr().length).toBe(1);
   expect(result.unwrapErr()[0].message).toBe(`
     TypeError: TS2322 Incorrect return type. Expected: 'number', Actual: 'string'.
     `.trimTemplate());
@@ -109,6 +111,7 @@ it('should produce input type errors', async () => {
   );
 
   expect(result.isErr()).toBeTruthy();
+  expect(result.unwrapErr().length).toBe(1);
   expect(result.unwrapErr()[0].message).toBe(`
     TypeError: TS2554 Incorrect argument type. Expected: '[string]', Actual: '[string, number]'.
     `.trimTemplate());
@@ -148,6 +151,7 @@ it('should handle no default export errors', async () => {
   );
 
   expect(result.isErr()).toBeTruthy();
+  expect(result.unwrapErr().length).toBe(1);
   expect(result.unwrapErr()[0].message).toBe(`
     TypeError: TS1192 No default export. Expected a default export with the signature: "(...args: [string]) => string".
     `.trimTemplate());
@@ -192,6 +196,7 @@ it('should handle no export errors', async () => {
   );
 
   expect(result.isErr()).toBeTruthy();
+  expect(result.unwrapErr().length).toBe(1);
   expect(result.unwrapErr()[0].message).toBe(`
     TypeError: TS2306 No exports. Expected a default export with the signature: "(...args: [string]) => string".
     `.trimTemplate());
@@ -238,6 +243,7 @@ it('should handle default export not function errors', async () => {
   );
 
   expect(result.isErr()).toBeTruthy();
+  expect(result.unwrapErr().length).toBe(1);
   expect(result.unwrapErr()[0].message).toBe(`
     TypeError: TS2349 Default export is not callable. Expected a default export with the signature: "(...args: [string]) => string".
     `.trimTemplate());
@@ -274,6 +280,7 @@ it('should produce internal type errors', async () => {
   );
 
   expect(result.isErr()).toBeTruthy();
+  expect(result.unwrapErr().length).toBe(2);
   expect(result.unwrapErr()[0].message).toBe(`
     TypeError: TS2322 Type 'string' is not assignable to type 'number'.
     `.trimTemplate());
@@ -289,6 +296,22 @@ it('should produce internal type errors', async () => {
     >2|   const other: number = 'hello';
                 ~~~~~
      3|   return thing + ' world';
+    `.trimTemplate());
+  expect(result.unwrapErr()[1].message).toBe(`
+    TypeError: TS2322 Type 'string' is not assignable to type 'number'.
+    `.trimTemplate());
+  expect(result.unwrapErr()[1].stack).toBe(`
+    at MyDSLFunction(3:3)
+    `.trimTemplate())
+  expect(result.unwrapErr()[1].location).toMatchObject({
+    line: 3,
+    column: 3,
+  });
+  expect(result.unwrapErr()[1].sourceContext).toBe(`
+     2|   const other: number = 'hello';
+    >3|   return thing + ' world';
+          ~~~~~~~~~~~~~~~~~~~~~~~~
+     4| }
     `.trimTemplate());
 });
 
@@ -350,7 +373,7 @@ it('should accept additional source files', async () => {
   expect(result.unwrap()).toBe('hello hello world other');
 });
 
-test('Aerie Throw Regression Test', async () => {
+test('Aerie command expansion throw Regression Test', async () => {
   const userCode = `
     export default function SingleCommandExpansion(props: { activity: ActivityType }): Command {
       const duration = Temporal.Duration.from('PT1H');
@@ -562,6 +585,7 @@ test('Aerie Scheduler TS2345 regression test', async () => {
   );
 
   expect(result.isErr()).toBeTruthy();
+  expect(result.unwrapErr().length).toBe(1);
   expect(result.unwrapErr()[0].message).toBe(`
     TypeError: TS2345 Argument of type '{ peelDirection: "fromStem"; }' is not assignable to parameter of type '{ duration: number; fancy: { subfield1: string; subfield2: { subsubfield1: number; }[]; }; peelDirection: "fromTip" | "fromStem"; }'.
       Type '{ peelDirection: "fromStem"; }' is missing the following properties from type '{ duration: number; fancy: { subfield1: string; subfield2: { subsubfield1: number; }[]; }; peelDirection: "fromTip" | "fromStem"; }': duration, fancy
@@ -612,6 +636,7 @@ test("Aerie Scheduler wrong return type no annotation regression test", async ()
   );
 
   expect(result.isErr()).toBeTruthy();
+  expect(result.unwrapErr().length).toBe(1);
   expect(result.unwrapErr()[0].message).toBe(`
     TypeError: TS2322 Incorrect return type. Expected: 'Goal', Actual: 'number'.
     `.trimTemplate());
@@ -628,4 +653,85 @@ test("Aerie Scheduler wrong return type no annotation regression test", async ()
           ~~~~~~~~
      3| }
     `.trimTemplate());
-})
+});
+
+test('Aerie command expansion invalid count regression test', async () => {
+  const userCode = `
+    export default function SingleCommandExpansion(): ExpansionReturn {
+      return DDM_CLOSE_OPEN_SELECT_DP;
+    }
+    `.trimTemplate()
+
+  const runner = new UserCodeRunner();
+  const [commandTypes, activityTypes, temporalPolyfill] = await Promise.all([
+    fs.promises.readFile(new URL('./inputs/command-types.ts', import.meta.url).pathname, 'utf8'),
+    fs.promises.readFile(new URL('./inputs/activity-types.ts', import.meta.url).pathname, 'utf8'),
+    fs.promises.readFile(new URL('./inputs/TemporalPolyfillTypes.ts', import.meta.url).pathname, 'utf8'),
+  ]);
+
+  const context = vm.createContext({
+    Temporal,
+  });
+  const result = await runner.executeUserCode(
+    userCode,
+    [{ activity: null}],
+    'Command[] | Command | null',
+    ['{ activity: ActivityType }'],
+    1000,
+    [
+      ts.createSourceFile('command-types.ts', commandTypes, ts.ScriptTarget.ESNext, true),
+      ts.createSourceFile('activity-types.ts', activityTypes, ts.ScriptTarget.ESNext, true),
+      ts.createSourceFile('TemporalPolyfillTypes.ts', temporalPolyfill, ts.ScriptTarget.ESNext, true),
+    ],
+    context,
+  );
+
+  expect(result.isErr()).toBeTruthy();
+  expect(result.unwrapErr().length).toBe(3);
+  expect(result.unwrapErr()[0].message).toBe(`
+    TypeError: TS2322 Incorrect return type. Expected: 'Command[] | Command | null', Actual: 'ExpansionReturn'.
+    `.trimTemplate());
+  expect(result.unwrapErr()[0].stack).toBe(`
+    at SingleCommandExpansion(1:51)
+    `.trimTemplate())
+  expect(result.unwrapErr()[0].location).toMatchObject({
+    line: 1,
+    column: 51,
+  });
+  expect(result.unwrapErr()[0].sourceContext).toBe(`
+    >1| export default function SingleCommandExpansion(): ExpansionReturn {
+                                                          ~~~~~~~~~~~~~~~
+     2|   return DDM_CLOSE_OPEN_SELECT_DP;
+    `.trimTemplate());
+  expect(result.unwrapErr()[1].message).toBe(`
+    TypeError: TS2554 Incorrect argument type. Expected: '[{ activity: ActivityType }]', Actual: '[]'.
+    `.trimTemplate());
+  expect(result.unwrapErr()[1].stack).toBe(`
+    at SingleCommandExpansion(1:1)
+    `.trimTemplate())
+  expect(result.unwrapErr()[1].location).toMatchObject({
+    line: 1,
+    column: 1,
+  });
+  expect(result.unwrapErr()[1].sourceContext).toBe(`
+    >1| export default function SingleCommandExpansion(): ExpansionReturn {
+        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+     2|   return DDM_CLOSE_OPEN_SELECT_DP;
+    `.trimTemplate());
+  expect(result.unwrapErr()[2].message).toBe(`
+    TypeError: TS2304 Cannot find name 'DDM_CLOSE_OPEN_SELECT_DP'.
+    `.trimTemplate());
+  expect(result.unwrapErr()[2].stack).toBe(`
+    at SingleCommandExpansion(2:10)
+    `.trimTemplate())
+  expect(result.unwrapErr()[2].location).toMatchObject({
+    line: 2,
+    column: 10,
+  });
+  expect(result.unwrapErr()[2].sourceContext).toBe(`
+     1| export default function SingleCommandExpansion(): ExpansionReturn {
+    >2|   return DDM_CLOSE_OPEN_SELECT_DP;
+                 ~~~~~~~~~~~~~~~~~~~~~~~~
+     3| }
+    `.trimTemplate());
+});

@@ -537,15 +537,15 @@ export class ExecutionHarnessTypeError extends UserCodeTypeError {
 		// "Module '{0}' has no default export."
 		if (this.diagnostic.code === 1192){
 			this.diagnostic.file = this.sources.get(USER_CODE_FILENAME)!;
-			this.diagnostic.start = undefined;
-			this.diagnostic.length = undefined;
+			this.diagnostic.start = this.diagnostic.file!.getStart();
+			this.diagnostic.length = this.diagnostic.file!.getEnd() - this.diagnostic.start!;
 			this.diagnostic.messageText = `No default export. Expected a default export with the signature: "(...args: ${this.argumentTypeNode.getText()}) => ${this.outputTypeNode.getText()}".`;
 		}
 		// "File '{0}' is not a module."
 		else if (this.diagnostic.code === 2306){
 			this.diagnostic.file = this.sources.get(USER_CODE_FILENAME)!;
-			this.diagnostic.start = undefined;
-			this.diagnostic.length = undefined;
+			this.diagnostic.start = this.diagnostic.file!.getStart();
+			this.diagnostic.length = this.diagnostic.file!.getEnd() - this.diagnostic.start!;
 			this.diagnostic.messageText = `No exports. Expected a default export with the signature: "(...args: ${this.argumentTypeNode.getText()}) => ${this.outputTypeNode.getText()}".`;
 		}
 		// "This expression is not callable."
@@ -590,8 +590,14 @@ export class ExecutionHarnessTypeError extends UserCodeTypeError {
 		) {
 			this.diagnostic.file = this.sources.get(USER_CODE_FILENAME)!;
 			const parameters = this.defaultExportedFunctionNode!.parameters;
-			this.diagnostic.start = Math.min(...parameters.map(p => p.getStart()));
-			this.diagnostic.length = Math.max(...parameters.map(p => p.getEnd())) - this.diagnostic.start;
+			// No parameters on default exported function, just return the whole signature
+			if (parameters.length === 0) {
+				this.diagnostic.start = this.defaultExportedFunctionNode!.getStart();
+				this.diagnostic.length = this.defaultExportedFunctionNode!.getText().split('\n')[0].length;
+			} else {
+				this.diagnostic.start = Math.min(...parameters.map(p => p.getStart()));
+				this.diagnostic.length = Math.max(...parameters.map(p => p.getEnd())) - this.diagnostic.start;
+			}
 			this.diagnostic.messageText = `Incorrect argument type. Expected: '${this.argumentTypeNode.getText()}', Actual: '[${parameters
 				.map(s => s.type?.getText())
 				.join(', ')}]'.`;
