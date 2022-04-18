@@ -58,8 +58,8 @@ export class UserCodeRunner {
 		const executionCode = `
 			${additionalSourceFiles.map(file => {
 				if (file.fileName.endsWith('.d.ts')) return '';
-				const fileNameSansExt = removeExt(file.fileName);
-				return `import '${fileNameSansExt}';`;
+				const filenameSansExt = removeExt(file.fileName);
+				return `import '${filenameSansExt}';`;
 			}).join('\n  ')}
       import defaultExport from '${USER_CODE_FILENAME}';
             
