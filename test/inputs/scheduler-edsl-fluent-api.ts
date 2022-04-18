@@ -1,4 +1,6 @@
-import type * as AST from './scheduler-ast.js';
+import * as AST from './scheduler-ast.js';
+
+const myDummyValue = AST.dummyValue;
 
 interface ActivityRecurrenceGoal extends Goal {}
 export class Goal {

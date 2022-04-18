@@ -3,6 +3,8 @@ export interface ActivityTemplate {
   args: {[key: string]: any},
 }
 
+export const dummyValue = "some value" // used to test importing values from this file
+
 /**
  * Goal
  *
