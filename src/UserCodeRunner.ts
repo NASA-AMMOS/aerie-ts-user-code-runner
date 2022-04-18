@@ -220,8 +220,9 @@ export class UserCodeRunner {
 		}
 		const harnessModule = moduleCache.get(EXECUTION_HARNESS_FILENAME)!;
 		await harnessModule.link(specifier => {
-			if (moduleCache.has(specifier)) {
-				return moduleCache.get(specifier)!;
+			const filenameSansExt = removeExt(specifier);
+			if (moduleCache.has(filenameSansExt)) {
+				return moduleCache.get(filenameSansExt)!;
 			}
 			throw new Error(`Unable to resolve dependency: ${specifier}`);
 		});
