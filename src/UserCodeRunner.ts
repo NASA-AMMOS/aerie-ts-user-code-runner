@@ -574,7 +574,14 @@ export class ExecutionHarnessTypeError extends UserCodeTypeError {
 					this.diagnostic.start = this.defaultExportedFunctionReturnNode!.getStart();
 					this.diagnostic.length = this.defaultExportedFunctionReturnNode!.getEnd() - this.defaultExportedFunctionReturnNode!.getStart();
 					this.diagnostic.messageText = `Incorrect return type. Expected: '${this.outputTypeNode.getText()}', Actual: '${match[1]}'.`;
-				} else {
+				}
+				else if (this.diagnostic.code === 2741) {
+					this.diagnostic.file = this.sources.get(USER_CODE_FILENAME)!;
+					this.diagnostic.start = this.defaultExportedFunctionReturnNode!.getStart();
+					this.diagnostic.length = this.defaultExportedFunctionReturnNode!.getEnd() - this.defaultExportedFunctionReturnNode!.getStart();
+					this.diagnostic.messageText = `Incorrect return type. ${ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n')}`;
+				}
+				else {
 					throw new Error(`Unmapped execution harness error: ${this.diagnostic.file?.fileName} TS${this.diagnostic.code} ${ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n')}`);
 				}
 			} else {

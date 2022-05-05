@@ -515,7 +515,7 @@ test('Aerie Scheduler test', async () => {
   const [schedulerAst, schedulerEdsl, modelSpecific] = await Promise.all([
     fs.promises.readFile(new URL('./inputs/scheduler-ast.ts', import.meta.url).pathname, 'utf8'),
     fs.promises.readFile(new URL('./inputs/scheduler-edsl-fluent-api.ts', import.meta.url).pathname, 'utf8'),
-    fs.promises.readFile(new URL('./inputs/dsl-model-specific.ts', import.meta.url).pathname, 'utf8'),
+    fs.promises.readFile(new URL('./inputs/mission-model-generated-code.ts', import.meta.url).pathname, 'utf8'),
   ]);
 
   const context = vm.createContext({
@@ -529,17 +529,24 @@ test('Aerie Scheduler test', async () => {
     [
       ts.createSourceFile('scheduler-ast.ts', schedulerAst, ts.ScriptTarget.ESNext),
       ts.createSourceFile('scheduler-edsl-fluent-api.ts', schedulerEdsl, ts.ScriptTarget.ESNext),
-      ts.createSourceFile('model-specific.ts', modelSpecific, ts.ScriptTarget.ESNext),
+      ts.createSourceFile('mission-model-generated-code.ts', modelSpecific, ts.ScriptTarget.ESNext),
     ],
     context,
   );
 
   expect(result.unwrap()).toMatchObject({
-    goalSpecifier: {
+    __astNode: {
       activityTemplate: {
         activityType: 'PeelBanana',
         args: {
           peelDirection: 'fromStem',
+          duration: 60 * 60 * 1000 * 1000,
+          fancy: {
+            subfield1: 'value1',
+            subfield2: [{
+              subsubfield1: 1,
+            }]
+          }
         }
       },
       interval: 60 * 60 * 1000 * 1000,
@@ -579,7 +586,7 @@ test('Aerie Scheduler TS2345 regression test', async () => {
     [
       ts.createSourceFile('scheduler-ast.ts', schedulerAst, ts.ScriptTarget.ESNext),
       ts.createSourceFile('scheduler-edsl-fluent-api.ts', schedulerEdsl, ts.ScriptTarget.ESNext),
-      ts.createSourceFile('model-specific.ts', modelSpecific, ts.ScriptTarget.ESNext),
+      ts.createSourceFile('mission-model-generated-code.ts', modelSpecific, ts.ScriptTarget.ESNext),
     ],
     context,
   );
@@ -616,7 +623,7 @@ test("Aerie Scheduler wrong return type no annotation regression test", async ()
   const [schedulerAst, schedulerEdsl, modelSpecific] = await Promise.all([
     fs.promises.readFile(new URL('./inputs/scheduler-ast.ts', import.meta.url).pathname, 'utf8'),
     fs.promises.readFile(new URL('./inputs/scheduler-edsl-fluent-api.ts', import.meta.url).pathname, 'utf8'),
-    fs.promises.readFile(new URL('./inputs/dsl-model-specific.ts', import.meta.url).pathname, 'utf8'),
+    fs.promises.readFile(new URL('./inputs/mission-model-generated-code.ts', import.meta.url).pathname, 'utf8'),
   ]);
 
   const context = vm.createContext({
@@ -630,7 +637,7 @@ test("Aerie Scheduler wrong return type no annotation regression test", async ()
     [
       ts.createSourceFile('scheduler-ast.ts', schedulerAst, ts.ScriptTarget.ESNext),
       ts.createSourceFile('scheduler-edsl-fluent-api.ts', schedulerEdsl, ts.ScriptTarget.ESNext),
-      ts.createSourceFile('model-specific.ts', modelSpecific, ts.ScriptTarget.ESNext),
+      ts.createSourceFile('mission-model-generated-code.ts', modelSpecific, ts.ScriptTarget.ESNext),
     ],
     context,
   );
@@ -733,5 +740,65 @@ test('Aerie command expansion invalid count regression test', async () => {
     >2|   return DDM_CLOSE_OPEN_SELECT_DP;
                  ~~~~~~~~~~~~~~~~~~~~~~~~
      3| }
+    `.trimTemplate());
+});
+
+test('Aerie scheduler unmapped harness error on missing property return type', async () => {
+  const userCode = `
+    interface FakeGoal {
+      and(...others: FakeGoal[]): FakeGoal;
+      or(...others: FakeGoal[]): FakeGoal;
+    }
+    export default function() {
+      const myFakeGoal: FakeGoal = {
+        and: (...others: FakeGoal[]) => {
+          return myFakeGoal;
+        },
+        or: (...others: FakeGoal[]) => {
+          return myFakeGoal;
+        },
+      };
+      return myFakeGoal;
+    }
+    `.trimTemplate()
+
+  const runner = new UserCodeRunner();
+  const [schedulerAst, schedulerEdsl, modelSpecific] = await Promise.all([
+    fs.promises.readFile(new URL('./inputs/scheduler-ast.ts', import.meta.url).pathname, 'utf8'),
+    fs.promises.readFile(new URL('./inputs/scheduler-edsl-fluent-api.ts', import.meta.url).pathname, 'utf8'),
+    fs.promises.readFile(new URL('./inputs/mission-model-generated-code.ts', import.meta.url).pathname, 'utf8'),
+  ]);
+
+  const context = vm.createContext({
+  });
+  const result = await runner.executeUserCode(
+    userCode,
+    [],
+    'Goal',
+    [],
+    undefined,
+    [
+      ts.createSourceFile('scheduler-ast.ts', schedulerAst, ts.ScriptTarget.ESNext),
+      ts.createSourceFile('scheduler-edsl-fluent-api.ts', schedulerEdsl, ts.ScriptTarget.ESNext),
+      ts.createSourceFile('mission-model-generated-code.ts', modelSpecific, ts.ScriptTarget.ESNext),
+    ],
+    context,
+  );
+
+  expect(result.isErr()).toBeTruthy();
+  expect(result.unwrapErr().length).toBe(1);
+  expect(result.unwrapErr()[0].message).toBe(`TypeError: TS2741 Incorrect return type. Property '__astNode' is missing in type 'FakeGoal' but required in type 'Goal'.`);
+  expect(result.unwrapErr()[0].stack).toBe(`
+    at (8:7)
+    `.trimTemplate())
+  expect(result.unwrapErr()[0].location).toMatchObject({
+    line: 8,
+    column: 7,
+  });
+  expect(result.unwrapErr()[0].sourceContext).toBe(`
+     7|     and: (...others: FakeGoal[]) => {
+    >8|       return myFakeGoal;
+              ~~~~~~~~~~~~~~~~~~
+     9|     },
     `.trimTemplate());
 });
