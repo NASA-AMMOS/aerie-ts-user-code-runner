@@ -1,59 +1,68 @@
 import * as AST from './scheduler-ast.js';
-
-const myDummyValue = AST.dummyValue;
+import { ActivityType } from "./mission-model-generated-code.js";
 
 interface ActivityRecurrenceGoal extends Goal {}
+interface ActivityCoexistenceGoal extends Goal {}
+
 export class Goal {
-  private readonly goalSpecifier: AST.GoalSpecifier;
+  public readonly __astNode: AST.GoalSpecifier;
 
-  private constructor(goalSpecifier: AST.GoalSpecifier) {
-    this.goalSpecifier = goalSpecifier;
+  private constructor(__astNode: AST.GoalSpecifier) {
+    this.__astNode = __astNode;
   }
 
-  private static new(goalSpecifier: AST.GoalSpecifier): Goal {
-    return new Goal(goalSpecifier);
-  }
-
-  private __serialize(): AST.GoalSpecifier {
-    return this.goalSpecifier;
+  private static new(__astNode: AST.GoalSpecifier): Goal {
+    return new Goal(__astNode);
   }
 
   public and(...others: Goal[]): Goal {
     return Goal.new({
-      kind: 'GoalAnd',
+      kind: AST.NodeKind.GoalAnd,
       goals: [
-        this.goalSpecifier,
-        ...others.map(other => other.goalSpecifier),
+        this.__astNode,
+        ...others.map(other => other.__astNode),
       ],
     });
   }
 
   public or(...others: Goal[]): Goal {
     return Goal.new({
-      kind: 'GoalOr',
+      kind: AST.NodeKind.GoalOr,
       goals: [
-        this.goalSpecifier,
-        ...others.map(other => other.goalSpecifier),
+        this.__astNode,
+        ...others.map(other => other.__astNode),
       ],
     });
   }
 
   public static ActivityRecurrenceGoal(opts: { activityTemplate: ActivityTemplate, interval: Duration }): ActivityRecurrenceGoal {
     return Goal.new({
-      kind: 'ActivityRecurrenceGoal',
+      kind: AST.NodeKind.ActivityRecurrenceGoal,
       activityTemplate: opts.activityTemplate,
       interval: opts.interval,
+    });
+  }
+  public static CoexistenceGoal(opts: { activityTemplate: ActivityTemplate, forEach: ActivityType }): ActivityCoexistenceGoal {
+    return Goal.new({
+      kind: AST.NodeKind.ActivityCoexistenceGoal,
+      activityTemplate: opts.activityTemplate,
+      forEach: {
+        type: opts.forEach
+      },
     });
   }
 }
 
 declare global {
   export class Goal {
+    public readonly __astNode: AST.GoalSpecifier;
     public and(...others: Goal[]): Goal
 
     public or(...others: Goal[]): Goal
 
     public static ActivityRecurrenceGoal(opts: { activityTemplate: ActivityTemplate, interval: Duration }): ActivityRecurrenceGoal
+
+    public static CoexistenceGoal(opts: { activityTemplate: ActivityTemplate, forEach: ActivityType }): ActivityCoexistenceGoal
   }
   type Duration = number;
   type Double = number;
