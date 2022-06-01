@@ -42,11 +42,6 @@ it('should produce runtime errors', async () => {
     line: 7,
     column: 8,
   });
-  expect(result.unwrapErr()[0].sourceContext).toBe(`
-     6| function subroutine() {
-    >7|   throw new Error('This is a test error');
-     8| }
-    `.trimTemplate());
 });
 
 it('should produce return type errors', async () => {
@@ -82,11 +77,6 @@ it('should produce return type errors', async () => {
     line: 1,
     column: 55,
   });
-  expect(result.unwrapErr()[0].sourceContext).toBe(`
-    >1| export default function MyDSLFunction(thing: string): string {
-                                                              ~~~~~~
-     2|   subroutine();
-    `.trimTemplate());
 });
 
 it('should produce input type errors', async () => {
@@ -122,11 +112,6 @@ it('should produce input type errors', async () => {
     line: 1,
     column: 39,
   });
-  expect(result.unwrapErr()[0].sourceContext).toBe(`
-    >1| export default function MyDSLFunction(thing: string, other: number): string {
-                                              ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-     2|   subroutine();
-    `.trimTemplate());
 });
 
 it('should handle no default export errors', async () => {
@@ -153,7 +138,7 @@ it('should handle no default export errors', async () => {
   expect(result.isErr()).toBeTruthy();
   expect(result.unwrapErr().length).toBe(1);
   expect(result.unwrapErr()[0].message).toBe(`
-    TypeError: TS1192 No default export. Expected a default export with the signature: "(...args: [string]) => string".
+    TypeError: TS1192 No default export. Expected a default export function with the signature: "(...args: [string]) => string".
     `.trimTemplate());
   expect(result.unwrapErr()[0].stack).toBe(`
     at (1:1)
@@ -162,16 +147,6 @@ it('should handle no default export errors', async () => {
     line: 1,
     column: 1,
   });
-  expect(result.unwrapErr()[0].sourceContext).toBe(`
-     1| export function MyDSLFunction(thing: string, other: number): string {
-     2|   subroutine();
-     3|   return thing + ' world';
-     4| }
-     5| 
-     6| function subroutine() {
-     7|   throw new Error('This is a test error');
-     8| }
-    `.trimTemplate());
 });
 
 it('should handle no export errors', async () => {
@@ -198,7 +173,7 @@ it('should handle no export errors', async () => {
   expect(result.isErr()).toBeTruthy();
   expect(result.unwrapErr().length).toBe(1);
   expect(result.unwrapErr()[0].message).toBe(`
-    TypeError: TS2306 No exports. Expected a default export with the signature: "(...args: [string]) => string".
+    TypeError: TS2306 No default export. Expected a default export function with the signature: "(...args: [string]) => string".
     `.trimTemplate());
   expect(result.unwrapErr()[0].stack).toBe(`
     at (1:1)
@@ -207,16 +182,6 @@ it('should handle no export errors', async () => {
     line: 1,
     column: 1,
   });
-  expect(result.unwrapErr()[0].sourceContext).toBe(`
-     1| function MyDSLFunction(thing: string, other: number): string {
-     2|   subroutine();
-     3|   return thing + ' world';
-     4| }
-     5| 
-     6| function subroutine() {
-     7|   throw new Error('This is a test error');
-     8| }
-    `.trimTemplate());
 });
 
 it('should handle default export not function errors', async () => {
@@ -245,7 +210,7 @@ it('should handle default export not function errors', async () => {
   expect(result.isErr()).toBeTruthy();
   expect(result.unwrapErr().length).toBe(1);
   expect(result.unwrapErr()[0].message).toBe(`
-    TypeError: TS2349 Default export is not callable. Expected a default export with the signature: "(...args: [string]) => string".
+    TypeError: TS2349 Default export is not a valid function. Expected a default export function with the signature: "(...args: [string]) => string".
     `.trimTemplate());
   expect(result.unwrapErr()[0].stack).toBe(`
     at (2:1)
@@ -254,12 +219,6 @@ it('should handle default export not function errors', async () => {
     line: 2,
     column: 1,
   });
-  expect(result.unwrapErr()[0].sourceContext).toBe(`
-     1| const hello = 'hello';
-    >2| export default hello;
-        ~~~~~~~~~~~~~~~~~~~~~
-     3| function MyDSLFunction(thing: string, other: number): string {
-    `.trimTemplate());
 });
 
 it('should produce internal type errors', async () => {
@@ -291,12 +250,6 @@ it('should produce internal type errors', async () => {
     line: 2,
     column: 9,
   });
-  expect(result.unwrapErr()[0].sourceContext).toBe(`
-     1| export default function MyDSLFunction(thing: string): number {
-    >2|   const other: number = 'hello';
-                ~~~~~
-     3|   return thing + ' world';
-    `.trimTemplate());
   expect(result.unwrapErr()[1].message).toBe(`
     TypeError: TS2322 Type 'string' is not assignable to type 'number'.
     `.trimTemplate());
@@ -307,12 +260,6 @@ it('should produce internal type errors', async () => {
     line: 3,
     column: 3,
   });
-  expect(result.unwrapErr()[1].sourceContext).toBe(`
-     2|   const other: number = 'hello';
-    >3|   return thing + ' world';
-          ~~~~~~~~~~~~~~~~~~~~~~~~
-     4| }
-    `.trimTemplate());
 });
 
 it('should return the final value', async () => {
@@ -451,47 +398,48 @@ test('Aerie undefined node test', async () => {
     context,
   );
 
-  expect(result.unwrapErr()).toMatchObject(expect.arrayContaining([
-    expect.objectContaining({
-      message: "TypeError: TS2322 Incorrect return type. Expected: 'Command[] | Command | null', Actual: 'ExpansionReturn'.",
-      stack: 'at BakeBananaBreadExpansionLogic(6:4)',
-      sourceContext: ' 5|   context: Context\n' +
-        '>6| ): ExpansionReturn {\n' +
-        '       ~~~~~~~~~~~~~~~\n' +
-        ' 7|   return [',
-      location: { line: 6, column: 4 }
-    }),
-    expect.objectContaining({
-      message: "TypeError: TS2339 Property 'temperature' does not exist on type 'ParameterTest'.",
-      stack: 'at BakeBananaBreadExpansionLogic(8:41)',
-      sourceContext:
-        ' 7|   return [\n' +
-        '>8|     PREHEAT_OVEN(props.activityInstance.temperature),\n' +
-        '                                            ~~~~~~~~~~~\n' +
-        ' 9|     PREPARE_LOAF(props.activityInstance.tbSugar, props.activityInstance.glutenFree),',
-      location: { line: 8, column: 41 }
-    }),
-    expect.objectContaining({
-      message: "TypeError: TS2339 Property 'tbSugar' does not exist on type 'ParameterTest'.",
-      stack: 'at BakeBananaBreadExpansionLogic(9:41)',
-      sourceContext:
-        ' 8|     PREHEAT_OVEN(props.activityInstance.temperature),\n' +
-        '>9|     PREPARE_LOAF(props.activityInstance.tbSugar, props.activityInstance.glutenFree),\n' +
-        '                                            ~~~~~~~\n' +
-        ' 10|     BAKE_BREAD,',
-      location: { line: 9, column: 41 }
-    }),
-    expect.objectContaining({
-      message: "TypeError: TS2339 Property 'glutenFree' does not exist on type 'ParameterTest'.",
-      stack: 'at BakeBananaBreadExpansionLogic(9:73)',
-      sourceContext:
-        ' 8|     PREHEAT_OVEN(props.activityInstance.temperature),\n' +
-        '>9|     PREPARE_LOAF(props.activityInstance.tbSugar, props.activityInstance.glutenFree),\n' +
-        '                                                                            ~~~~~~~~~~\n' +
-        ' 10|     BAKE_BREAD,',
-      location: { line: 9, column: 73 }
-    }),
-  ]));
+  expect(result.isErr()).toBeTruthy();
+  expect(result.unwrapErr().length).toBe(4);
+  expect(result.unwrapErr()[0].message).toBe(`
+    TypeError: TS2322 Incorrect return type. Expected: 'Command[] | Command | null', Actual: 'ExpansionReturn'.
+    `.trimTemplate());
+  expect(result.unwrapErr()[0].stack).toBe(`
+    at BakeBananaBreadExpansionLogic(6:4)
+    `.trimTemplate())
+  expect(result.unwrapErr()[0].location).toMatchObject({
+    line: 6,
+    column: 4,
+  });
+  expect(result.unwrapErr()[1].message).toBe(`
+    TypeError: TS2339 Property 'temperature' does not exist on type 'ParameterTest'.
+    `.trimTemplate());
+  expect(result.unwrapErr()[1].stack).toBe(`
+    at BakeBananaBreadExpansionLogic(8:41)
+    `.trimTemplate())
+  expect(result.unwrapErr()[1].location).toMatchObject({
+    line: 8,
+    column: 41,
+  });
+  expect(result.unwrapErr()[2].message).toBe(`
+    TypeError: TS2339 Property 'tbSugar' does not exist on type 'ParameterTest'.
+    `.trimTemplate());
+  expect(result.unwrapErr()[2].stack).toBe(`
+    at BakeBananaBreadExpansionLogic(9:41)
+    `.trimTemplate())
+  expect(result.unwrapErr()[2].location).toMatchObject({
+    line: 9,
+    column: 41,
+  });
+  expect(result.unwrapErr()[3].message).toBe(`
+    TypeError: TS2339 Property 'glutenFree' does not exist on type 'ParameterTest'.
+    `.trimTemplate());
+  expect(result.unwrapErr()[3].stack).toBe(`
+    at BakeBananaBreadExpansionLogic(9:73)
+    `.trimTemplate())
+  expect(result.unwrapErr()[3].location).toMatchObject({
+    line: 9,
+    column: 73,
+  });
 });
 
 test('Aerie Scheduler test', async () => {
@@ -604,17 +552,11 @@ test('Aerie Scheduler TS2345 regression test', async () => {
     line: 2,
     column: 48,
   });
-  expect(result.unwrapErr()[0].sourceContext).toBe(`
-     1| export default function myGoal() {
-    >2|   return myHelper(ActivityTemplates.PeelBanana({ peelDirection: 'fromStem' }))
-                                                       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-     3| }
-    `.trimTemplate());
 });
 
 test("Aerie Scheduler wrong return type no annotation regression test", async () => {
   const userCode = `
-  export default function myGoal() {
+  export default function myGoal<T>() {
     return 5
   }
   `.trimTemplate();
@@ -648,18 +590,136 @@ test("Aerie Scheduler wrong return type no annotation regression test", async ()
     TypeError: TS2322 Incorrect return type. Expected: 'Goal', Actual: 'number'.
     `.trimTemplate());
   expect(result.unwrapErr()[0].stack).toBe(`
-    at myGoal(2:3)
+    at myGoal(1:1)
     `.trimTemplate())
   expect(result.unwrapErr()[0].location).toMatchObject({
-    line: 2,
-    column: 3,
+    line: 1,
+    column: 1,
   });
-  expect(result.unwrapErr()[0].sourceContext).toBe(`
-     1| export default function myGoal() {
-    >2|   return 5
-          ~~~~~~~~
-     3| }
+});
+
+test("literal type regression test", async () => {
+  const userCode = `
+  export default function myGoal() {
+    return 5
+  }
+  `.trimTemplate();
+
+  const runner = new UserCodeRunner();
+  const [schedulerAst, schedulerEdsl, modelSpecific] = await Promise.all([
+    fs.promises.readFile(new URL('./inputs/scheduler-ast.ts', import.meta.url).pathname, 'utf8'),
+    fs.promises.readFile(new URL('./inputs/scheduler-edsl-fluent-api.ts', import.meta.url).pathname, 'utf8'),
+    fs.promises.readFile(new URL('./inputs/mission-model-generated-code.ts', import.meta.url).pathname, 'utf8'),
+  ]);
+
+  const context = vm.createContext({
+  });
+  const result = await runner.executeUserCode(
+    userCode,
+    [],
+    'number',
+    [],
+    undefined,
+    [
+      ts.createSourceFile('scheduler-ast.ts', schedulerAst, ts.ScriptTarget.ESNext),
+      ts.createSourceFile('scheduler-edsl-fluent-api.ts', schedulerEdsl, ts.ScriptTarget.ESNext),
+      ts.createSourceFile('mission-model-generated-code.ts', modelSpecific, ts.ScriptTarget.ESNext),
+    ],
+    context,
+  );
+
+  expect(result.isOk()).toBeTruthy();
+});
+
+test("branching return regression test", async () => {
+  const userCode = `
+  export default function myGoal() {
+    if (true) {
+      return '4'
+    }
+    return 5
+  }
+  `.trimTemplate();
+
+  const runner = new UserCodeRunner();
+  const [schedulerAst, schedulerEdsl, modelSpecific] = await Promise.all([
+    fs.promises.readFile(new URL('./inputs/scheduler-ast.ts', import.meta.url).pathname, 'utf8'),
+    fs.promises.readFile(new URL('./inputs/scheduler-edsl-fluent-api.ts', import.meta.url).pathname, 'utf8'),
+    fs.promises.readFile(new URL('./inputs/mission-model-generated-code.ts', import.meta.url).pathname, 'utf8'),
+  ]);
+
+  const context = vm.createContext({
+  });
+  const result = await runner.executeUserCode(
+    userCode,
+    [],
+    'string',
+    [],
+    undefined,
+    [
+      ts.createSourceFile('scheduler-ast.ts', schedulerAst, ts.ScriptTarget.ESNext),
+      ts.createSourceFile('scheduler-edsl-fluent-api.ts', schedulerEdsl, ts.ScriptTarget.ESNext),
+      ts.createSourceFile('mission-model-generated-code.ts', modelSpecific, ts.ScriptTarget.ESNext),
+    ],
+    context,
+  );
+
+  expect(result.isErr()).toBeTruthy();
+  expect(result.unwrapErr().length).toBe(1);
+  expect(result.unwrapErr()[0].message).toBe(`
+    TypeError: TS2322 Incorrect return type. Expected: 'string', Actual: '"4" | 5'.
     `.trimTemplate());
+  expect(result.unwrapErr()[0].stack).toBe(`
+    at myGoal(1:1)
+    `.trimTemplate())
+  expect(result.unwrapErr()[0].location).toMatchObject({
+    line: 1,
+    column: 1,
+  });
+});
+
+test("literal return regression test", async () => {
+  const userCode = `
+  export default function myGoal() {
+    return 5
+  }
+  `.trimTemplate();
+
+  const runner = new UserCodeRunner();
+  const [schedulerAst, schedulerEdsl, modelSpecific] = await Promise.all([
+    fs.promises.readFile(new URL('./inputs/scheduler-ast.ts', import.meta.url).pathname, 'utf8'),
+    fs.promises.readFile(new URL('./inputs/scheduler-edsl-fluent-api.ts', import.meta.url).pathname, 'utf8'),
+    fs.promises.readFile(new URL('./inputs/mission-model-generated-code.ts', import.meta.url).pathname, 'utf8'),
+  ]);
+
+  const context = vm.createContext({
+  });
+  const result = await runner.executeUserCode(
+    userCode,
+    [],
+    '4',
+    [],
+    undefined,
+    [
+      ts.createSourceFile('scheduler-ast.ts', schedulerAst, ts.ScriptTarget.ESNext),
+      ts.createSourceFile('scheduler-edsl-fluent-api.ts', schedulerEdsl, ts.ScriptTarget.ESNext),
+      ts.createSourceFile('mission-model-generated-code.ts', modelSpecific, ts.ScriptTarget.ESNext),
+    ],
+    context,
+  );
+
+  expect(result.isErr()).toBeTruthy();
+  expect(result.unwrapErr().length).toBe(1);
+  expect(result.unwrapErr()[0].message).toBe(`
+    TypeError: TS2322 Incorrect return type. Expected: '4', Actual: 'number'.
+    `.trimTemplate());
+  expect(result.unwrapErr()[0].stack).toBe(`
+    at myGoal(1:1)
+    `.trimTemplate())
+  expect(result.unwrapErr()[0].location).toMatchObject({
+    line: 1,
+    column: 1,
+  });
 });
 
 test('Aerie command expansion invalid count regression test', async () => {
@@ -705,11 +765,6 @@ test('Aerie command expansion invalid count regression test', async () => {
     line: 1,
     column: 51,
   });
-  expect(result.unwrapErr()[0].sourceContext).toBe(`
-    >1| export default function SingleCommandExpansion(): ExpansionReturn {
-                                                          ~~~~~~~~~~~~~~~
-     2|   return DDM_CLOSE_OPEN_SELECT_DP;
-    `.trimTemplate());
   expect(result.unwrapErr()[1].message).toBe(`
     TypeError: TS2554 Incorrect argument type. Expected: '[{ activity: ActivityType }]', Actual: '[]'.
     `.trimTemplate());
@@ -720,11 +775,6 @@ test('Aerie command expansion invalid count regression test', async () => {
     line: 1,
     column: 1,
   });
-  expect(result.unwrapErr()[1].sourceContext).toBe(`
-    >1| export default function SingleCommandExpansion(): ExpansionReturn {
-        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-     2|   return DDM_CLOSE_OPEN_SELECT_DP;
-    `.trimTemplate());
   expect(result.unwrapErr()[2].message).toBe(`
     TypeError: TS2304 Cannot find name 'DDM_CLOSE_OPEN_SELECT_DP'.
     `.trimTemplate());
@@ -735,12 +785,6 @@ test('Aerie command expansion invalid count regression test', async () => {
     line: 2,
     column: 10,
   });
-  expect(result.unwrapErr()[2].sourceContext).toBe(`
-     1| export default function SingleCommandExpansion(): ExpansionReturn {
-    >2|   return DDM_CLOSE_OPEN_SELECT_DP;
-                 ~~~~~~~~~~~~~~~~~~~~~~~~
-     3| }
-    `.trimTemplate());
 });
 
 test('Aerie scheduler unmapped harness error on missing property return type', async () => {
@@ -787,18 +831,216 @@ test('Aerie scheduler unmapped harness error on missing property return type', a
 
   expect(result.isErr()).toBeTruthy();
   expect(result.unwrapErr().length).toBe(1);
-  expect(result.unwrapErr()[0].message).toBe(`TypeError: TS2741 Incorrect return type. Property '__astNode' is missing in type 'FakeGoal' but required in type 'Goal'.`);
+  expect(result.unwrapErr()[0].message).toBe(`TypeError: TS2741 Incorrect return type. Expected: 'Goal', Actual: 'FakeGoal'.`);
   expect(result.unwrapErr()[0].stack).toBe(`
-    at (8:7)
+    at (5:1)
     `.trimTemplate())
   expect(result.unwrapErr()[0].location).toMatchObject({
-    line: 8,
-    column: 7,
+    line: 5,
+    column: 1,
   });
-  expect(result.unwrapErr()[0].sourceContext).toBe(`
-     7|     and: (...others: FakeGoal[]) => {
-    >8|       return myFakeGoal;
-              ~~~~~~~~~~~~~~~~~~
-     9|     },
+});
+
+test('should handle unnamed arrow function default exports', async () => {
+  const userCode = `
+    type ExpansionProps = { activity: ActivityType };
+
+    export default (props: ExpansionProps): ExpansionReturn => {
+        const { activity } = props;
+        const { biteSize } = activity.attributes.arguments;
+    
+        return [
+            AVS_DMP_ADC_SNAPSHOT(biteSize)
+        ];
+    }
+    `.trimTemplate()
+
+  const runner = new UserCodeRunner();
+  const [commandTypes, activityTypes, temporalPolyfill] = await Promise.all([
+    fs.promises.readFile(new URL('./inputs/command-types.ts', import.meta.url).pathname, 'utf8'),
+    fs.promises.readFile(new URL('./inputs/activity-types.ts', import.meta.url).pathname, 'utf8'),
+    fs.promises.readFile(new URL('./inputs/TemporalPolyfillTypes.ts', import.meta.url).pathname, 'utf8'),
+  ]);
+
+  const context = vm.createContext({
+    Temporal,
+  });
+  const result = await runner.executeUserCode(
+    userCode,
+    [{ activity: null}],
+    'Command[] | Command | null',
+    ['{ activity: ActivityType }'],
+    1000,
+    [
+      ts.createSourceFile('command-types.ts', commandTypes, ts.ScriptTarget.ESNext, true),
+      ts.createSourceFile('activity-types.ts', activityTypes, ts.ScriptTarget.ESNext, true),
+      ts.createSourceFile('TemporalPolyfillTypes.ts', temporalPolyfill, ts.ScriptTarget.ESNext, true),
+    ],
+    context,
+  );
+
+  expect(result.isErr()).toBeTruthy();
+  expect(result.unwrapErr().length).toBe(3);
+  expect(result.unwrapErr()[0].message).toBe(`
+    TypeError: TS2322 Incorrect return type. Expected: 'Command[] | Command | null', Actual: 'ExpansionReturn'.
     `.trimTemplate());
+  expect(result.unwrapErr()[0].stack).toBe(`
+    at (3:1)
+    `.trimTemplate())
+  expect(result.unwrapErr()[0].location).toMatchObject({
+    line: 3,
+    column: 1,
+  });
+});
+
+test('should handle exported variable that references an arrow function', async () => {
+  const userCode = `
+    type ExpansionProps = { activity: ActivityType };
+
+    const myExpansion = (props: ExpansionProps): ExpansionReturn => {
+        const { activity } = props;
+        const { biteSize } = activity.attributes.arguments;
+    
+        return [
+            AVS_DMP_ADC_SNAPSHOT(biteSize)
+        ];
+    };
+    export default myExpansion;
+    `.trimTemplate()
+
+  const runner = new UserCodeRunner();
+  const [commandTypes, activityTypes, temporalPolyfill] = await Promise.all([
+    fs.promises.readFile(new URL('./inputs/command-types.ts', import.meta.url).pathname, 'utf8'),
+    fs.promises.readFile(new URL('./inputs/activity-types.ts', import.meta.url).pathname, 'utf8'),
+    fs.promises.readFile(new URL('./inputs/TemporalPolyfillTypes.ts', import.meta.url).pathname, 'utf8'),
+  ]);
+
+  const context = vm.createContext({
+    Temporal,
+  });
+  const result = await runner.executeUserCode(
+    userCode,
+    [{ activity: null}],
+    'Command[] | Command | null',
+    ['{ activity: ActivityType }'],
+    1000,
+    [
+      ts.createSourceFile('command-types.ts', commandTypes, ts.ScriptTarget.ESNext, true),
+      ts.createSourceFile('activity-types.ts', activityTypes, ts.ScriptTarget.ESNext, true),
+      ts.createSourceFile('TemporalPolyfillTypes.ts', temporalPolyfill, ts.ScriptTarget.ESNext, true),
+    ],
+    context,
+  );
+
+  expect(result.isErr()).toBeTruthy();
+  expect(result.unwrapErr().length).toBe(3);
+  expect(result.unwrapErr()[0].message).toBe(`
+    TypeError: TS2322 Incorrect return type. Expected: 'Command[] | Command | null', Actual: 'ExpansionReturn'.
+    `.trimTemplate());
+  expect(result.unwrapErr()[0].stack).toBe(`
+    at (11:1)
+    `.trimTemplate())
+  expect(result.unwrapErr()[0].location).toMatchObject({
+    line: 11,
+    column: 1,
+  });
+});
+
+test('should handle exported variable that references a function', async () => {
+  const userCode = `
+    type ExpansionProps = { activity: ActivityType };
+
+    const myExpansion =  function(props: ExpansionProps): ExpansionReturn {
+        const { activity } = props;
+        const { biteSize } = activity.attributes.arguments;
+    
+        return [
+            AVS_DMP_ADC_SNAPSHOT(biteSize)
+        ];
+    };
+    export default myExpansion;
+    `.trimTemplate()
+
+  const runner = new UserCodeRunner();
+  const [commandTypes, activityTypes, temporalPolyfill] = await Promise.all([
+    fs.promises.readFile(new URL('./inputs/command-types.ts', import.meta.url).pathname, 'utf8'),
+    fs.promises.readFile(new URL('./inputs/activity-types.ts', import.meta.url).pathname, 'utf8'),
+    fs.promises.readFile(new URL('./inputs/TemporalPolyfillTypes.ts', import.meta.url).pathname, 'utf8'),
+  ]);
+
+  const context = vm.createContext({
+    Temporal,
+  });
+  const result = await runner.executeUserCode(
+    userCode,
+    [{ activity: null}],
+    'Command[] | Command | null',
+    ['{ activity: ActivityType }'],
+    1000,
+    [
+      ts.createSourceFile('command-types.ts', commandTypes, ts.ScriptTarget.ESNext, true),
+      ts.createSourceFile('activity-types.ts', activityTypes, ts.ScriptTarget.ESNext, true),
+      ts.createSourceFile('TemporalPolyfillTypes.ts', temporalPolyfill, ts.ScriptTarget.ESNext, true),
+    ],
+    context,
+  );
+
+  expect(result.isErr()).toBeTruthy();
+  expect(result.unwrapErr().length).toBe(3);
+  expect(result.unwrapErr()[0].message).toBe(`
+    TypeError: TS2322 Incorrect return type. Expected: 'Command[] | Command | null', Actual: 'ExpansionReturn'.
+    `.trimTemplate());
+  expect(result.unwrapErr()[0].stack).toBe(`
+    at (11:1)
+    `.trimTemplate())
+  expect(result.unwrapErr()[0].location).toMatchObject({
+    line: 11,
+    column: 1,
+  });
+});
+
+test('should handle unnamed arrow function default exports assignment', async () => {
+  const userCode = `
+    type ExpansionProps = { activity: ActivityType };
+
+    const myExpansion = (props: ExpansionProps) => {
+        const { activity } = props;
+        const { primitiveLong } = activity.attributes.arguments;
+    
+        if (true) {
+          return undefined;
+        }
+    
+        return [
+            PREHEAT_OVEN(primitiveLong)
+        ];
+    };
+    export default myExpansion;
+    `.trimTemplate()
+
+  const runner = new UserCodeRunner();
+  const [commandTypes, activityTypes, temporalPolyfill] = await Promise.all([
+    fs.promises.readFile(new URL('./inputs/command-types.ts', import.meta.url).pathname, 'utf8'),
+    fs.promises.readFile(new URL('./inputs/activity-types.ts', import.meta.url).pathname, 'utf8'),
+    fs.promises.readFile(new URL('./inputs/TemporalPolyfillTypes.ts', import.meta.url).pathname, 'utf8'),
+  ]);
+
+  const context = vm.createContext({
+    Temporal,
+  });
+  const result = await runner.executeUserCode(
+    userCode,
+    [{ activity: { attributes: { arguments: { primitiveLong: 1 } } } }],
+    'Command[] | Command | null',
+    ['{ activity: ActivityType }'],
+    1000,
+    [
+      ts.createSourceFile('command-types.ts', commandTypes, ts.ScriptTarget.ESNext, true),
+      ts.createSourceFile('activity-types.ts', activityTypes, ts.ScriptTarget.ESNext, true),
+      ts.createSourceFile('TemporalPolyfillTypes.ts', temporalPolyfill, ts.ScriptTarget.ESNext, true),
+    ],
+    context,
+  );
+
+  expect(result.isOk()).toBeTruthy();
 });
