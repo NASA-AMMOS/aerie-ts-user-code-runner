@@ -9,8 +9,6 @@ A simple way to safely run user code written in Typescript.
 - **Execution Limits** - V8 isolates enable setting a timeout on the executing code, so users can't hang your system.
 - **Simple User API** - User code just needs to export a default function that takes any arguments you want to give it,
   and returns anything you want back from it.
-- **Great Error Messaging** - Both type errors and runtime errors are beautifully formatted to show your users exactly
-  where the problem they need to address is.
 - **No Throw** - executeUserCode never throws. The return uses a Result monad to ensure confidence in dealing with user code errors
 
 
@@ -18,7 +16,7 @@ A simple way to safely run user code written in Typescript.
 
 NodeJS >= 13.0.0
 
-Because we are transipiling and running the typescript code as modules in a vm, we need to flag on the vm modules flag at runtime with
+Because we are transpiling and running the typescript code as modules in a vm, we need to flag on the vm modules flag at runtime with
 ```node --experimental-vm-modules```
 
 ## Example
@@ -53,26 +51,16 @@ Error messaging is even more important when dealing with user code as you really
 ```
 TypeError: TS2322 Incorrect return type. Expected: 'number', Actual: 'string'.
   at MyDSLFunction(0:54)
->1| export default function MyDSLFunction(thing: string): string {
-                                                          ~~~~~~
- 2|   subroutine();
 ```
 
 ```
 TypeError: TS2554 Incorrect argument type. Expected: '[string]', Actual: '[string, number]'.
   at MyDSLFunction(0:38)
->1| export default function MyDSLFunction(thing: string, other: number): string {
-                                          ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
- 2|   subroutine();
 
 ```
 
 ```
 TypeError: TS2322 Type 'string' is not assignable to type 'number'.
- 1| export default function MyDSLFunction(thing: string): number {
->2|   const other: number = 'hello';
-            ~~~~~
- 3|   return thing + ' world';
 ```
 
 ### Runtime Error Examples
@@ -81,10 +69,6 @@ TypeError: TS2322 Type 'string' is not assignable to type 'number'.
 Error: This is a test error
       at subroutine(7:8)
       at MyDSLFunction(2:2)
-
- 6| function subroutine() {
->7|   throw new Error('This is a test error');
- 8| }
 ```
 
 ## Usage Examples
