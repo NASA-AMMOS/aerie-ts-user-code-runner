@@ -27,11 +27,13 @@ export interface CacheItem {
 export interface UserCodeRunnerOptions {
 	cacheOptions?: LRUCache.Options<string, CacheItem>;
 	typeErrorCodeMessageMappers?: {[errorCode: number]: (message: string) => string | undefined },// The error code to message mappers
+	compilerOptions?: Partial<Pick<ts.CompilerOptions, 'target' | 'module' | 'lib'>>,
 }
 
 export class UserCodeRunner {
 	private readonly user_file_cache: LRUCache<string, CacheItem>;
 	private readonly mapDiagnosticMessage: ReturnType<typeof createMapDiagnosticMessage>;
+	private readonly compilerOptions: Partial<Pick<ts.CompilerOptions, 'target' | 'module' | 'lib'>> | undefined;
 
 	constructor(options?: UserCodeRunnerOptions) {
 		this.user_file_cache = new LRUCache<string, CacheItem>({
@@ -40,6 +42,7 @@ export class UserCodeRunner {
 			...options?.cacheOptions
 		});
 		this.mapDiagnosticMessage = createMapDiagnosticMessage(options?.typeErrorCodeMessageMappers ?? defaultErrorCodeMessageMappers);
+		this.compilerOptions = options?.compilerOptions;
 	}
 
 	public async preProcess(
@@ -51,9 +54,9 @@ export class UserCodeRunner {
 		// TypeCheck and transpile code
 
 		const { options } = ts.parseJsonConfigFileContent(tsConfig, ts.sys, '');
-		const compilerTarget = options.target as ts.ScriptTarget;
-		const compilerModule = options.module as ts.ModuleKind;
-		const compilerLib = options.lib as string[];
+		const compilerTarget = this.compilerOptions?.target ?? options.target as ts.ScriptTarget;
+		const compilerModule = this.compilerOptions?.module ?? options.module as ts.ModuleKind;
+		const compilerLib = this.compilerOptions?.lib ?? options.lib as string[];
 
 		const userSourceFile = ts.createSourceFile(
 			USER_CODE_FILENAME,

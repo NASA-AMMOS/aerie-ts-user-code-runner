@@ -320,6 +320,50 @@ it('should accept additional source files', async () => {
   expect(result.unwrap()).toBe('hello hello world other');
 });
 
+it('should allow overriding compiler options', async () => {
+  const userCode = `
+    import { importedFunction } from 'other-importable';
+    export default function myDSLFunction(thing: string): string {
+      return someGlobalFunction(thing) + importedFunction(' world');
+    }
+    `.trimTemplate();
+
+  const runner = new UserCodeRunner({
+    compilerOptions: {
+      target: ts.ScriptTarget.ESNext,
+      module: ts.ModuleKind.ESNext,
+      lib: ['lib.esnext.d.ts'],
+    }
+  });
+
+  const result = await runner.executeUserCode(
+    userCode,
+    ['hello'],
+    'string',
+    ['string'],
+    1000,
+    [
+      ts.createSourceFile('globals.d.ts', `
+      declare global {
+        function someGlobalFunction(thing: string): string;
+      }
+      export {};
+      `.trimTemplate(), ts.ScriptTarget.ESNext, true),
+      ts.createSourceFile('other-importable.ts', `
+      export function importedFunction(thing: string): string {
+        return thing + ' other';
+      }
+      `.trimTemplate(), ts.ScriptTarget.ESNext, true)
+    ],
+    vm.createContext({
+      someGlobalFunction: (thing: string) => 'hello ' + thing, // Implementation injected to global namespace here
+    }),
+  );
+
+  // expect(result.isOk()).toBeTruthy();
+  expect(result.unwrap()).toBe('hello hello world other');
+});
+
 test('Aerie command expansion throw Regression Test', async () => {
   const userCode = `
     export default function SingleCommandExpansion(props: { activity: ActivityType }): Command {
