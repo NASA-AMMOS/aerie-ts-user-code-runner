@@ -8,7 +8,8 @@ import { parse } from 'stack-trace';
 import { BasicSourceMapConsumer, IndexedSourceMapConsumer, SourceMapConsumer } from 'source-map';
 import LRUCache from 'lru-cache';
 import { Result } from './utils/monads.js';
-import { TypeGuard } from './utils/typeGuardCombinators';
+import type { TypeGuard } from './utils/typeGuardCombinators';
+import tsConfig from '../tsconfig.json';
 
 type integer = number;
 
@@ -48,10 +49,16 @@ export class UserCodeRunner {
 		additionalSourceFiles: ts.SourceFile[] = [],
 	): Promise<Result<CacheItem, UserCodeError[]>> {
 		// TypeCheck and transpile code
+
+		const { options } = ts.parseJsonConfigFileContent(tsConfig, ts.sys, '');
+		const compilerTarget = options.target as ts.ScriptTarget;
+		const compilerModule = options.module as ts.ModuleKind;
+		const compilerLib = options.lib as string[];
+
 		const userSourceFile = ts.createSourceFile(
 			USER_CODE_FILENAME,
 			userCode,
-			ts.ScriptTarget.ESNext,
+			compilerTarget,
 			undefined,
 			ts.ScriptKind.TS,
 		);
@@ -74,7 +81,7 @@ export class UserCodeRunner {
 		const executionSourceFile = ts.createSourceFile(
 			EXECUTION_HARNESS_FILENAME,
 			executionCode,
-			ts.ScriptTarget.ESNext,
+			compilerTarget,
 			undefined,
 			ts.ScriptKind.TS,
 		);
@@ -91,7 +98,7 @@ export class UserCodeRunner {
 		const jsFileMap = new Map<string, ts.SourceFile>();
 		const sourceMapMap = new Map<string, ts.SourceFile>();
 
-		const defaultCompilerHost = ts.createCompilerHost({});
+		const defaultCompilerHost = ts.createCompilerHost(options);
 		const customCompilerHost: ts.CompilerHost = {
 			...defaultCompilerHost,
 			getCurrentDirectory(): string {
@@ -109,11 +116,11 @@ export class UserCodeRunner {
 			writeFile: (fileName, data) => {
 				const filenameSansExt = removeExt(fileName);
 				if (fileName.endsWith('.map')) {
-					sourceMapMap.set(removeExt(filenameSansExt), ts.createSourceFile(removeExt(filenameSansExt), data, ts.ScriptTarget.ESNext));
+					sourceMapMap.set(removeExt(filenameSansExt), ts.createSourceFile(removeExt(filenameSansExt), data, compilerTarget));
 				} else {
 					jsFileMap.set(
 						filenameSansExt,
-						ts.createSourceFile(filenameSansExt, data, ts.ScriptTarget.ESNext, undefined, ts.ScriptKind.JS),
+						ts.createSourceFile(filenameSansExt, data, compilerTarget, undefined, ts.ScriptKind.JS),
 					);
 				}
 			},
@@ -133,9 +140,9 @@ export class UserCodeRunner {
 		const program = ts.createProgram(
 			[...additionalSourceFiles.map(f => f.fileName), EXECUTION_HARNESS_FILENAME],
 			{
-				target: ts.ScriptTarget.ESNext,
-				module: ts.ModuleKind.ES2022,
-				lib: ['lib.esnext.d.ts'],
+				target: compilerTarget,
+				module: compilerModule,
+				lib: compilerLib,
 				sourceMap: true,
 			},
 			customCompilerHost,
