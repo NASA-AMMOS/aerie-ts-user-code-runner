@@ -21,7 +21,7 @@ export function trimTemplate(str: string): string {
   const regex = /^[^\S\r\n]*\n(.*)\n([^\S\r\n]*)$/s;
   const match = regex.exec(str);
   if (match) {
-    return dedent(match[1], 1, match[2]);
+    return dedent(match[1]!, 1, match[2]!);
   }
   return trimCharacters(str, '\s');
 }

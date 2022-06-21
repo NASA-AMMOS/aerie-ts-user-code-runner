@@ -14,7 +14,7 @@ A simple way to safely run user code written in Typescript.
 
 ## Requirements
 
-NodeJS >= 13.0.0
+NodeJS >= 16.0.0
 
 Because we are transpiling and running the typescript code as modules in a vm, we need to flag on the vm modules flag at runtime with
 ```node --experimental-vm-modules```

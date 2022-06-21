@@ -23,6 +23,7 @@
   },
   "devDependencies": {
     "@js-temporal/polyfill": "^0.4.0",
+    "@tsconfig/node16-strictest-esm": "^1.0.2",
     "@types/jest": "^27.4.1",
     "@types/lru-cache": "^7.5.0",
     "@types/node": "^17.0.21",

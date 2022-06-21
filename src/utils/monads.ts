@@ -5,7 +5,7 @@ export const None = Symbol('None');
 class ErrorWithContents<T> extends Error {
   public readonly contents: T;
   constructor(message: string, contents: T) {
-    super();
+    super(message);
     this.contents = contents;
   }
 }
@@ -112,7 +112,7 @@ export class Result<T, E> {
    *
    * This function can be used to unpack a successful result while handling an error.
    */
-  public mapOrElse<U, F extends (v: T) => U>(errorMapper: (error: E) => U, f: (value: T) => U): U {
+  public mapOrElse<U>(errorMapper: (error: E) => U, f: (value: T) => U): U {
     if (this.isErr()) {
       return errorMapper(this.unwrapErr());
     }
