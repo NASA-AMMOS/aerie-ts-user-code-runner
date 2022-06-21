@@ -31,14 +31,14 @@ it('should produce runtime errors', async () => {
 
   expect(result.isErr()).toBeTruthy();
   expect(result.unwrapErr().length).toBe(1);
-  expect(result.unwrapErr()[0].message).toBe(`
+  expect(result.unwrapErr()[0]?.message).toBe(`
     Error: This is a test error
     `.trimTemplate());
-  expect(result.unwrapErr()[0].stack).toBe(`
+  expect(result.unwrapErr()[0]?.stack).toBe(`
     at subroutine(7:8)
     at MyDSLFunction(2:2)
     `.trimTemplate())
-  expect(result.unwrapErr()[0].location).toMatchObject({
+  expect(result.unwrapErr()[0]?.location).toMatchObject({
     line: 7,
     column: 8,
   });
@@ -67,13 +67,13 @@ it('should produce return type errors', async () => {
 
   expect(result.isErr()).toBeTruthy();
   expect(result.unwrapErr().length).toBe(1);
-  expect(result.unwrapErr()[0].message).toBe(`
+  expect(result.unwrapErr()[0]?.message).toBe(`
     TypeError: TS2322 Incorrect return type. Expected: 'number', Actual: 'string'.
     `.trimTemplate());
-  expect(result.unwrapErr()[0].stack).toBe(`
+  expect(result.unwrapErr()[0]?.stack).toBe(`
     at MyDSLFunction(1:55)
     `.trimTemplate())
-  expect(result.unwrapErr()[0].location).toMatchObject({
+  expect(result.unwrapErr()[0]?.location).toMatchObject({
     line: 1,
     column: 55,
   });
@@ -102,13 +102,13 @@ it('should produce input type errors', async () => {
 
   expect(result.isErr()).toBeTruthy();
   expect(result.unwrapErr().length).toBe(1);
-  expect(result.unwrapErr()[0].message).toBe(`
+  expect(result.unwrapErr()[0]?.message).toBe(`
     TypeError: TS2554 Incorrect argument type. Expected: '[string]', Actual: '[string, number]'.
     `.trimTemplate());
-  expect(result.unwrapErr()[0].stack).toBe(`
+  expect(result.unwrapErr()[0]?.stack).toBe(`
     at MyDSLFunction(1:39)
     `.trimTemplate())
-  expect(result.unwrapErr()[0].location).toMatchObject({
+  expect(result.unwrapErr()[0]?.location).toMatchObject({
     line: 1,
     column: 39,
   });
@@ -137,13 +137,13 @@ it('should handle no default export errors', async () => {
 
   expect(result.isErr()).toBeTruthy();
   expect(result.unwrapErr().length).toBe(1);
-  expect(result.unwrapErr()[0].message).toBe(`
+  expect(result.unwrapErr()[0]?.message).toBe(`
     TypeError: TS1192 No default export. Expected a default export function with the signature: "(...args: [string]) => string".
     `.trimTemplate());
-  expect(result.unwrapErr()[0].stack).toBe(`
+  expect(result.unwrapErr()[0]?.stack).toBe(`
     at (1:1)
     `.trimTemplate())
-  expect(result.unwrapErr()[0].location).toMatchObject({
+  expect(result.unwrapErr()[0]?.location).toMatchObject({
     line: 1,
     column: 1,
   });
@@ -172,13 +172,13 @@ it('should handle no export errors', async () => {
 
   expect(result.isErr()).toBeTruthy();
   expect(result.unwrapErr().length).toBe(1);
-  expect(result.unwrapErr()[0].message).toBe(`
+  expect(result.unwrapErr()[0]?.message).toBe(`
     TypeError: TS2306 No default export. Expected a default export function with the signature: "(...args: [string]) => string".
     `.trimTemplate());
-  expect(result.unwrapErr()[0].stack).toBe(`
+  expect(result.unwrapErr()[0]?.stack).toBe(`
     at (1:1)
     `.trimTemplate())
-  expect(result.unwrapErr()[0].location).toMatchObject({
+  expect(result.unwrapErr()[0]?.location).toMatchObject({
     line: 1,
     column: 1,
   });
@@ -209,13 +209,13 @@ it('should handle default export not function errors', async () => {
 
   expect(result.isErr()).toBeTruthy();
   expect(result.unwrapErr().length).toBe(1);
-  expect(result.unwrapErr()[0].message).toBe(`
+  expect(result.unwrapErr()[0]?.message).toBe(`
     TypeError: TS2349 Default export is not a valid function. Expected a default export function with the signature: "(...args: [string]) => string".
     `.trimTemplate());
-  expect(result.unwrapErr()[0].stack).toBe(`
+  expect(result.unwrapErr()[0]?.stack).toBe(`
     at (2:1)
     `.trimTemplate())
-  expect(result.unwrapErr()[0].location).toMatchObject({
+  expect(result.unwrapErr()[0]?.location).toMatchObject({
     line: 2,
     column: 1,
   });
@@ -240,23 +240,23 @@ it('should produce internal type errors', async () => {
 
   expect(result.isErr()).toBeTruthy();
   expect(result.unwrapErr().length).toBe(2);
-  expect(result.unwrapErr()[0].message).toBe(`
+  expect(result.unwrapErr()[0]?.message).toBe(`
     TypeError: TS2322 Type 'string' is not assignable to type 'number'.
     `.trimTemplate());
-  expect(result.unwrapErr()[0].stack).toBe(`
+  expect(result.unwrapErr()[0]?.stack).toBe(`
     at MyDSLFunction(2:9)
     `.trimTemplate())
-  expect(result.unwrapErr()[0].location).toMatchObject({
+  expect(result.unwrapErr()[0]?.location).toMatchObject({
     line: 2,
     column: 9,
   });
-  expect(result.unwrapErr()[1].message).toBe(`
+  expect(result.unwrapErr()[1]?.message).toBe(`
     TypeError: TS2322 Type 'string' is not assignable to type 'number'.
     `.trimTemplate());
-  expect(result.unwrapErr()[1].stack).toBe(`
+  expect(result.unwrapErr()[1]?.stack).toBe(`
     at MyDSLFunction(3:3)
     `.trimTemplate())
-  expect(result.unwrapErr()[1].location).toMatchObject({
+  expect(result.unwrapErr()[1]?.location).toMatchObject({
     line: 3,
     column: 3,
   });
@@ -400,43 +400,43 @@ test('Aerie undefined node test', async () => {
 
   expect(result.isErr()).toBeTruthy();
   expect(result.unwrapErr().length).toBe(4);
-  expect(result.unwrapErr()[0].message).toBe(`
+  expect(result.unwrapErr()[0]?.message).toBe(`
     TypeError: TS2322 Incorrect return type. Expected: 'Command[] | Command | null', Actual: 'ExpansionReturn'.
     `.trimTemplate());
-  expect(result.unwrapErr()[0].stack).toBe(`
+  expect(result.unwrapErr()[0]?.stack).toBe(`
     at BakeBananaBreadExpansionLogic(6:4)
     `.trimTemplate())
-  expect(result.unwrapErr()[0].location).toMatchObject({
+  expect(result.unwrapErr()[0]?.location).toMatchObject({
     line: 6,
     column: 4,
   });
-  expect(result.unwrapErr()[1].message).toBe(`
+  expect(result.unwrapErr()[1]?.message).toBe(`
     TypeError: TS2339 Property 'temperature' does not exist on type 'ParameterTest'.
     `.trimTemplate());
-  expect(result.unwrapErr()[1].stack).toBe(`
+  expect(result.unwrapErr()[1]?.stack).toBe(`
     at BakeBananaBreadExpansionLogic(8:41)
     `.trimTemplate())
-  expect(result.unwrapErr()[1].location).toMatchObject({
+  expect(result.unwrapErr()[1]?.location).toMatchObject({
     line: 8,
     column: 41,
   });
-  expect(result.unwrapErr()[2].message).toBe(`
+  expect(result.unwrapErr()[2]?.message).toBe(`
     TypeError: TS2339 Property 'tbSugar' does not exist on type 'ParameterTest'.
     `.trimTemplate());
-  expect(result.unwrapErr()[2].stack).toBe(`
+  expect(result.unwrapErr()[2]?.stack).toBe(`
     at BakeBananaBreadExpansionLogic(9:41)
     `.trimTemplate())
-  expect(result.unwrapErr()[2].location).toMatchObject({
+  expect(result.unwrapErr()[2]?.location).toMatchObject({
     line: 9,
     column: 41,
   });
-  expect(result.unwrapErr()[3].message).toBe(`
+  expect(result.unwrapErr()[3]?.message).toBe(`
     TypeError: TS2339 Property 'glutenFree' does not exist on type 'ParameterTest'.
     `.trimTemplate());
-  expect(result.unwrapErr()[3].stack).toBe(`
+  expect(result.unwrapErr()[3]?.stack).toBe(`
     at BakeBananaBreadExpansionLogic(9:73)
     `.trimTemplate())
-  expect(result.unwrapErr()[3].location).toMatchObject({
+  expect(result.unwrapErr()[3]?.location).toMatchObject({
     line: 9,
     column: 73,
   });
@@ -541,14 +541,14 @@ test('Aerie Scheduler TS2345 regression test', async () => {
 
   expect(result.isErr()).toBeTruthy();
   expect(result.unwrapErr().length).toBe(1);
-  expect(result.unwrapErr()[0].message).toBe(`
+  expect(result.unwrapErr()[0]?.message).toBe(`
     TypeError: TS2345 Argument of type '{ peelDirection: "fromStem"; }' is not assignable to parameter of type '{ duration: number; fancy: { subfield1: string; subfield2: { subsubfield1: number; }[]; }; peelDirection: "fromTip" | "fromStem"; }'.
       Type '{ peelDirection: "fromStem"; }' is missing the following properties from type '{ duration: number; fancy: { subfield1: string; subfield2: { subsubfield1: number; }[]; }; peelDirection: "fromTip" | "fromStem"; }': duration, fancy
     `.trimTemplate());
-  expect(result.unwrapErr()[0].stack).toBe(`
+  expect(result.unwrapErr()[0]?.stack).toBe(`
     at myGoal(2:48)
     `.trimTemplate())
-  expect(result.unwrapErr()[0].location).toMatchObject({
+  expect(result.unwrapErr()[0]?.location).toMatchObject({
     line: 2,
     column: 48,
   });
@@ -586,13 +586,13 @@ test("Aerie Scheduler wrong return type no annotation regression test", async ()
 
   expect(result.isErr()).toBeTruthy();
   expect(result.unwrapErr().length).toBe(1);
-  expect(result.unwrapErr()[0].message).toBe(`
+  expect(result.unwrapErr()[0]?.message).toBe(`
     TypeError: TS2322 Incorrect return type. Expected: 'Goal', Actual: 'number'.
     `.trimTemplate());
-  expect(result.unwrapErr()[0].stack).toBe(`
+  expect(result.unwrapErr()[0]?.stack).toBe(`
     at myGoal(1:1)
     `.trimTemplate())
-  expect(result.unwrapErr()[0].location).toMatchObject({
+  expect(result.unwrapErr()[0]?.location).toMatchObject({
     line: 1,
     column: 1,
   });
@@ -666,13 +666,13 @@ test("branching return regression test", async () => {
 
   expect(result.isErr()).toBeTruthy();
   expect(result.unwrapErr().length).toBe(1);
-  expect(result.unwrapErr()[0].message).toBe(`
+  expect(result.unwrapErr()[0]?.message).toBe(`
     TypeError: TS2322 Incorrect return type. Expected: 'string', Actual: '"4" | 5'.
     `.trimTemplate());
-  expect(result.unwrapErr()[0].stack).toBe(`
+  expect(result.unwrapErr()[0]?.stack).toBe(`
     at myGoal(1:1)
     `.trimTemplate())
-  expect(result.unwrapErr()[0].location).toMatchObject({
+  expect(result.unwrapErr()[0]?.location).toMatchObject({
     line: 1,
     column: 1,
   });
@@ -710,13 +710,13 @@ test("literal return regression test", async () => {
 
   expect(result.isErr()).toBeTruthy();
   expect(result.unwrapErr().length).toBe(1);
-  expect(result.unwrapErr()[0].message).toBe(`
+  expect(result.unwrapErr()[0]?.message).toBe(`
     TypeError: TS2322 Incorrect return type. Expected: '4', Actual: 'number'.
     `.trimTemplate());
-  expect(result.unwrapErr()[0].stack).toBe(`
+  expect(result.unwrapErr()[0]?.stack).toBe(`
     at myGoal(1:1)
     `.trimTemplate())
-  expect(result.unwrapErr()[0].location).toMatchObject({
+  expect(result.unwrapErr()[0]?.location).toMatchObject({
     line: 1,
     column: 1,
   });
@@ -755,33 +755,33 @@ test('Aerie command expansion invalid count regression test', async () => {
 
   expect(result.isErr()).toBeTruthy();
   expect(result.unwrapErr().length).toBe(3);
-  expect(result.unwrapErr()[0].message).toBe(`
+  expect(result.unwrapErr()[0]?.message).toBe(`
     TypeError: TS2322 Incorrect return type. Expected: 'Command[] | Command | null', Actual: 'ExpansionReturn'.
     `.trimTemplate());
-  expect(result.unwrapErr()[0].stack).toBe(`
+  expect(result.unwrapErr()[0]?.stack).toBe(`
     at SingleCommandExpansion(1:51)
     `.trimTemplate())
-  expect(result.unwrapErr()[0].location).toMatchObject({
+  expect(result.unwrapErr()[0]?.location).toMatchObject({
     line: 1,
     column: 51,
   });
-  expect(result.unwrapErr()[1].message).toBe(`
+  expect(result.unwrapErr()[1]?.message).toBe(`
     TypeError: TS2554 Incorrect argument type. Expected: '[{ activity: ActivityType }]', Actual: '[]'.
     `.trimTemplate());
-  expect(result.unwrapErr()[1].stack).toBe(`
+  expect(result.unwrapErr()[1]?.stack).toBe(`
     at SingleCommandExpansion(1:1)
     `.trimTemplate())
-  expect(result.unwrapErr()[1].location).toMatchObject({
+  expect(result.unwrapErr()[1]?.location).toMatchObject({
     line: 1,
     column: 1,
   });
-  expect(result.unwrapErr()[2].message).toBe(`
+  expect(result.unwrapErr()[2]?.message).toBe(`
     TypeError: TS2304 Cannot find name 'DDM_CLOSE_OPEN_SELECT_DP'.
     `.trimTemplate());
-  expect(result.unwrapErr()[2].stack).toBe(`
+  expect(result.unwrapErr()[2]?.stack).toBe(`
     at SingleCommandExpansion(2:10)
     `.trimTemplate())
-  expect(result.unwrapErr()[2].location).toMatchObject({
+  expect(result.unwrapErr()[2]?.location).toMatchObject({
     line: 2,
     column: 10,
   });
@@ -831,11 +831,11 @@ test('Aerie scheduler unmapped harness error on missing property return type', a
 
   expect(result.isErr()).toBeTruthy();
   expect(result.unwrapErr().length).toBe(1);
-  expect(result.unwrapErr()[0].message).toBe(`TypeError: TS2741 Incorrect return type. Expected: 'Goal', Actual: 'FakeGoal'.`);
-  expect(result.unwrapErr()[0].stack).toBe(`
+  expect(result.unwrapErr()[0]?.message).toBe(`TypeError: TS2741 Incorrect return type. Expected: 'Goal', Actual: 'FakeGoal'.`);
+  expect(result.unwrapErr()[0]?.stack).toBe(`
     at (5:1)
     `.trimTemplate())
-  expect(result.unwrapErr()[0].location).toMatchObject({
+  expect(result.unwrapErr()[0]?.location).toMatchObject({
     line: 5,
     column: 1,
   });
@@ -881,13 +881,13 @@ test('should handle unnamed arrow function default exports', async () => {
 
   expect(result.isErr()).toBeTruthy();
   expect(result.unwrapErr().length).toBe(3);
-  expect(result.unwrapErr()[0].message).toBe(`
+  expect(result.unwrapErr()[0]?.message).toBe(`
     TypeError: TS2322 Incorrect return type. Expected: 'Command[] | Command | null', Actual: 'ExpansionReturn'.
     `.trimTemplate());
-  expect(result.unwrapErr()[0].stack).toBe(`
+  expect(result.unwrapErr()[0]?.stack).toBe(`
     at (3:1)
     `.trimTemplate())
-  expect(result.unwrapErr()[0].location).toMatchObject({
+  expect(result.unwrapErr()[0]?.location).toMatchObject({
     line: 3,
     column: 1,
   });
@@ -934,13 +934,13 @@ test('should handle exported variable that references an arrow function', async 
 
   expect(result.isErr()).toBeTruthy();
   expect(result.unwrapErr().length).toBe(3);
-  expect(result.unwrapErr()[0].message).toBe(`
+  expect(result.unwrapErr()[0]?.message).toBe(`
     TypeError: TS2322 Incorrect return type. Expected: 'Command[] | Command | null', Actual: 'ExpansionReturn'.
     `.trimTemplate());
-  expect(result.unwrapErr()[0].stack).toBe(`
+  expect(result.unwrapErr()[0]?.stack).toBe(`
     at (11:1)
     `.trimTemplate())
-  expect(result.unwrapErr()[0].location).toMatchObject({
+  expect(result.unwrapErr()[0]?.location).toMatchObject({
     line: 11,
     column: 1,
   });
@@ -987,13 +987,13 @@ test('should handle exported variable that references a function', async () => {
 
   expect(result.isErr()).toBeTruthy();
   expect(result.unwrapErr().length).toBe(3);
-  expect(result.unwrapErr()[0].message).toBe(`
+  expect(result.unwrapErr()[0]?.message).toBe(`
     TypeError: TS2322 Incorrect return type. Expected: 'Command[] | Command | null', Actual: 'ExpansionReturn'.
     `.trimTemplate());
-  expect(result.unwrapErr()[0].stack).toBe(`
+  expect(result.unwrapErr()[0]?.stack).toBe(`
     at (11:1)
     `.trimTemplate())
-  expect(result.unwrapErr()[0].location).toMatchObject({
+  expect(result.unwrapErr()[0]?.location).toMatchObject({
     line: 11,
     column: 1,
   });

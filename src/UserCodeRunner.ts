@@ -211,11 +211,11 @@ export class UserCodeRunner {
 			this.user_file_cache.set(userCodeHash, result.unwrap());
 		}
 
-		const { jsFileMap, tsFileMap, sourceMap } = this.user_file_cache.get(userCodeHash)!;
+		const { jsFileMap, sourceMap } = this.user_file_cache.get(userCodeHash)!;
 
 		// Put args and result into context
-		context.__args = args;
-		context.__result = undefined;
+		context['__args'] = args;
+		context['__result'] = undefined;
 
 		// Create modules for VM
 		const moduleCache = new Map<string, vm.Module>();
@@ -241,9 +241,9 @@ export class UserCodeRunner {
 			await harnessModule.evaluate({
 				timeout,
 			});
-			return Result.Ok(context.__result);
+			return Result.Ok(context['__result']);
 		} catch (error: any) {
-			return Result.Err([UserCodeRuntimeError.new(error as Error, sourceMap, tsFileMap)]);
+			return Result.Err([UserCodeRuntimeError.new(error as Error, sourceMap)]);
 		}
 	}
 }
@@ -354,13 +354,11 @@ export class UserCodeTypeError extends UserCodeError {
 export class UserCodeRuntimeError extends UserCodeError {
 	private readonly error: Error;
 	private readonly sourceMap: SourceMapConsumer;
-	private readonly tsFileCache: Map<string, ts.SourceFile>;
 
-	protected constructor(error: Error, sourceMap: SourceMapConsumer, tsFileCache: Map<string, ts.SourceFile>) {
+	protected constructor(error: Error, sourceMap: SourceMapConsumer) {
 		super();
 		this.error = error;
 		this.sourceMap = sourceMap;
-		this.tsFileCache = tsFileCache;
 	}
 
 	public get message(): string {
@@ -398,8 +396,8 @@ export class UserCodeRuntimeError extends UserCodeError {
 	public get location(): { line: number; column: number } {
 		const stack = parse(this.error);
 		const originalPosition = this.sourceMap.originalPositionFor({
-			line: stack[0].getLineNumber()!,
-			column: stack[0].getColumnNumber()!,
+			line: stack[0]?.getLineNumber()!,
+			column: stack[0]?.getColumnNumber()!,
 		});
 		return {
 			line: originalPosition.line!,
@@ -410,19 +408,18 @@ export class UserCodeRuntimeError extends UserCodeError {
 	public static new(
 		error: Error,
 		sourceMap: SourceMapConsumer,
-		tsFileCache: Map<string, ts.SourceFile>,
 	): UserCodeRuntimeError {
-		return new UserCodeRuntimeError(error, sourceMap, tsFileCache);
+		return new UserCodeRuntimeError(error, sourceMap);
 	}
 }
 
 // Redirect the execution harness errors to the user code type signature
 export class ExecutionHarnessTypeError extends UserCodeTypeError {
 	constructor(
-		protected diagnostic: ts.Diagnostic,
-		protected sources: Map<string, ts.SourceFile>,
-		protected typeChecker: ts.TypeChecker,
-		protected mapDiagnosticMessage: (diagnostic:  ts.Diagnostic) => string[],
+		protected override diagnostic: ts.Diagnostic,
+		protected override sources: Map<string, ts.SourceFile>,
+		protected override typeChecker: ts.TypeChecker,
+		protected override mapDiagnosticMessage: (diagnostic:  ts.Diagnostic) => string[],
 	) {
 		super(diagnostic, sources, typeChecker, mapDiagnosticMessage);
 
@@ -510,7 +507,7 @@ export class ExecutionHarnessTypeError extends UserCodeTypeError {
 		throw new Error(`Unhandled diagnostic node: ${diagnosticNode.getText()}`);
 	}
 
-	public get stack(): string {
+	public override get stack(): string {
 		return (
 			'at ' +
 			(this.defaultExportedFunctionNode?.name?.getText() ?? '') +
@@ -522,7 +519,7 @@ export class ExecutionHarnessTypeError extends UserCodeTypeError {
 		);
 	}
 
-	public get location(): { line: number; column: number } {
+	public override get location(): { line: number; column: number } {
 		const userFile = this.sources.get(USER_CODE_FILENAME)!;
 		if (this.diagnostic.start === undefined) {
 			return {
@@ -630,22 +627,23 @@ export class ExecutionHarnessTypeError extends UserCodeTypeError {
 	protected get argumentTypeNode(): ts.TypeNode {
 		const moduleBlock = this.globalModuleDeclarationBlock;
 		const variableDeclaration = UserCodeError.getDescendentNodes(
-			moduleBlock.statements[0],
+			moduleBlock.statements[0]!,
 			ts.isVariableDeclarationList,
 		)[0] as ts.VariableDeclarationList;
-		return variableDeclaration.declarations[0].type!;
+		return variableDeclaration.declarations[0]!.type!;
 	}
 
 	protected get outputTypeNode(): ts.TypeNode {
 		const moduleBlock = this.globalModuleDeclarationBlock;
 		const variableDeclaration = UserCodeError.getDescendentNodes(
-			moduleBlock.statements[1],
+			moduleBlock.statements[1]!,
 			ts.isVariableDeclarationList,
 		)[0] as ts.VariableDeclarationList;
-		return variableDeclaration.declarations[0].type!;
+		return variableDeclaration.declarations[0]!.type!;
 	}
 }
 
+// @ts-ignore
 function printTree(node: ts.Node | ts.Node[], level = 0): string {
 	if (Array.isArray(node)) {
 		let returnString = '';
@@ -655,7 +653,7 @@ function printTree(node: ts.Node | ts.Node[], level = 0): string {
 		return returnString;
 	}
 
-	let returnString = ts.SyntaxKind[node.kind].indent(level) + ': ' + node.getText().split('\n')[0] + '\n';
+	let returnString = ts.SyntaxKind[node.kind]?.indent(level) + ': ' + node.getText().split('\n')[0] + '\n';
 	for (const child of node.getChildren()) {
 		returnString += printTree(child, level + 1);
 	}
