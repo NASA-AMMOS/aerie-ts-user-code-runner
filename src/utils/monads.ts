@@ -263,6 +263,23 @@ export class Result<T, E> {
     }
     return `Err(${this.unwrapErr()})`;
   }
+
+  public toJSON(): { $$type: 'Result.Ok'; $$value: T } | { $$type: 'Result.Err', $$value: E } {
+    if (this.isOk()) {
+      return { $$type: 'Result.Ok', $$value: this.unwrap() };
+    }
+    return { $$type: 'Result.Err', $$value: this.unwrapErr() };
+  }
+
+  public static fromJSON<T, E>(json: { $$type: 'Result.Ok'; $$value: T } | { $$type: 'Result.Err', $$value: E }): Result<T, E> {
+    if (json.$$type === 'Result.Ok') {
+      return Result.Ok<T, E>(json.$$value);
+    }
+    else if (json.$$type === 'Result.Err') {
+      return Result.Err<E, T>(json.$$value);
+    }
+    throw new Error(`Invalid JSON serialization of Result: ${JSON.stringify(json)}`);
+  }
 }
 
 /**
@@ -532,6 +549,23 @@ export class Option<T> {
       return `Some(${this.unwrap()})`;
     }
     return `None()`;
+  }
+
+  public toJSON(): { $$type: 'Option.Some'; $$value: T } | { $$type: 'Option.None' } {
+    if (this.isSome()) {
+      return { $$type: 'Option.Some', $$value: this.unwrap() };
+    }
+    return { $$type: 'Option.None' };
+  }
+
+  public static fromJSON<T>(json: { $$type: 'Option.Some'; $$value: T } | { $$type: 'Option.None' }): Option<T> {
+    if (json.$$type === 'Option.Some') {
+      return Option.Some(json.$$value);
+    }
+    else if (json.$$type === 'Option.None') {
+      return Option.None();
+    }
+    throw new Error(`Invalid JSON serialization of Option: ${JSON.stringify(json)}`);
   }
 }
 

@@ -15,7 +15,7 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "lru-cache": "^7.7.1",
+    "buffer-backed-object": "0.3.1",
     "source-map": "^0.7.3",
     "stack-trace": "^1.0.0-pre1",
     "typedoc": "^0.22.13",

@@ -6,7 +6,6 @@ import { createMapDiagnosticMessage } from './utils/errorMessageMapping.js';
 import ts from 'typescript';
 import { parse } from 'stack-trace';
 import { BasicSourceMapConsumer, IndexedSourceMapConsumer, SourceMapConsumer } from 'source-map';
-import LRUCache from 'lru-cache';
 import { Result } from './utils/monads.js';
 import { TypeGuard } from './utils/typeGuardCombinators';
 
@@ -17,27 +16,24 @@ export {defaultErrorCodeMessageMappers} from './defaultErrorCodeMessageMappers.j
 const EXECUTION_HARNESS_FILENAME = '__execution_harness';
 const USER_CODE_FILENAME = '__user_file';
 
-export interface CacheItem {
+export interface CompilationArtifacts {
 	jsFileMap: Map<string, ts.SourceFile>;
 	tsFileMap: Map<string, ts.SourceFile>;
 	sourceMap: BasicSourceMapConsumer | IndexedSourceMapConsumer;
 }
 
 export interface UserCodeRunnerOptions {
-	cacheOptions?: LRUCache.Options<string, CacheItem>;
-	typeErrorCodeMessageMappers?: {[errorCode: number]: (message: string) => string | undefined },// The error code to message mappers
+	typeErrorCodeMessageMappers?: {[errorCode: integer]: (message: string) => string | undefined },// The error code to message mappers
+	compilerOptions?: Partial<Pick<ts.CompilerOptions, 'target' | 'module' | 'lib'>>,
+	cache?: Map<string, Result<CompilationArtifacts, UserCodeError[]>>,
 }
 
 export class UserCodeRunner {
-	private readonly user_file_cache: LRUCache<string, CacheItem>;
+	private readonly user_file_cache: Map<string, Result<CompilationArtifacts, UserCodeError[]>> | undefined;
 	private readonly mapDiagnosticMessage: ReturnType<typeof createMapDiagnosticMessage>;
 
 	constructor(options?: UserCodeRunnerOptions) {
-		this.user_file_cache = new LRUCache<string, CacheItem>({
-			max: 500,
-			ttl: 1000 * 60 * 30,
-			...options?.cacheOptions
-		});
+		this.user_file_cache = options?.cache;
 		this.mapDiagnosticMessage = createMapDiagnosticMessage(options?.typeErrorCodeMessageMappers ?? defaultErrorCodeMessageMappers);
 	}
 
@@ -46,7 +42,7 @@ export class UserCodeRunner {
 		outputType: string = 'any',
 		argsTypes: string[] = ['any'],
 		additionalSourceFiles: ts.SourceFile[] = [],
-	): Promise<Result<CacheItem, UserCodeError[]>> {
+	): Promise<Result<CompilationArtifacts, UserCodeError[]>> {
 		// TypeCheck and transpile code
 		const userSourceFile = ts.createSourceFile(
 			USER_CODE_FILENAME,
@@ -195,16 +191,18 @@ export class UserCodeRunner {
 	): Promise<Result<ReturnType, UserCodeError[]>> {
 		const userCodeHash = UserCodeRunner.hash(`${userCode}:${outputType}:${argsTypes.join(':')}${additionalSourceFiles.map(f => `:${f.text}`).join('')}`);
 
-		if (!this.user_file_cache.has(userCodeHash)) {
-			const result = await this.preProcess(userCode, outputType, argsTypes, additionalSourceFiles);
+		const result = this.user_file_cache?.has(userCodeHash)
+			? this.user_file_cache.get(userCodeHash)!
+			: await this.preProcess(userCode, outputType, argsTypes, additionalSourceFiles)
+				.then(result => {
+					this.user_file_cache?.set(userCodeHash, result);
+					return result;
+				});
 
-			if (result.isErr()) {
-				return result;
-			}
-			this.user_file_cache.set(userCodeHash, result.unwrap());
+		if (result.isErr()) {
+			return result;
 		}
-
-		const { jsFileMap, tsFileMap, sourceMap } = this.user_file_cache.get(userCodeHash)!;
+		const { jsFileMap, sourceMap } = result.unwrap();
 
 		// Put args and result into context
 		context.__args = args;
@@ -236,7 +234,7 @@ export class UserCodeRunner {
 			});
 			return Result.Ok(context.__result);
 		} catch (error: any) {
-			return Result.Err([UserCodeRuntimeError.new(error as Error, sourceMap, tsFileMap)]);
+			return Result.Err([UserCodeRuntimeError.new(error as Error, sourceMap)]);
 		}
 	}
 }
@@ -250,7 +248,7 @@ export abstract class UserCodeError {
 	public abstract get stack(): string;
 
 	// Location in the source code where the error occurred
-	public abstract get location(): { line: number; column: number };
+	public abstract get location(): { line: integer; column: integer };
 
 	protected static getDescendentNodes<T extends ts.Node>(node: ts.Node, guard: TypeGuard<ts.Node, T>): T[] {
 		const nodeList: T[] = [];
@@ -264,7 +262,7 @@ export abstract class UserCodeError {
 		return nodeList;
 	}
 
-	protected static getDescendentAtLocation(node: ts.Node, start: number, end: number): ts.Node | null {
+	protected static getDescendentAtLocation(node: ts.Node, start: integer, end: integer): ts.Node | null {
 		if (node.getStart() === start && node.getEnd() === end) {
 			return node;
 		}
@@ -279,7 +277,7 @@ export abstract class UserCodeError {
 	public toJSON(): {
 		message: string;
 		stack: string;
-		location: { line: number; column: number };
+		location: { line: integer; column: integer };
 	} {
 		return {
 			message: this.message,
@@ -319,7 +317,7 @@ export class UserCodeTypeError extends UserCodeError {
     return `at ${functionDeclaration?.name?.getText() ?? ''}(${this.location.line}:${this.location.column})`;
   }
 
-	public get location(): { line: number; column: number } {
+	public get location(): { line: integer; column: integer } {
 		if (this.diagnostic.start === undefined) {
 			throw new Error('Could not find start position');
 		}
@@ -347,13 +345,11 @@ export class UserCodeTypeError extends UserCodeError {
 export class UserCodeRuntimeError extends UserCodeError {
 	private readonly error: Error;
 	private readonly sourceMap: SourceMapConsumer;
-	private readonly tsFileCache: Map<string, ts.SourceFile>;
 
-	protected constructor(error: Error, sourceMap: SourceMapConsumer, tsFileCache: Map<string, ts.SourceFile>) {
+	protected constructor(error: Error, sourceMap: SourceMapConsumer) {
 		super();
 		this.error = error;
 		this.sourceMap = sourceMap;
-		this.tsFileCache = tsFileCache;
 	}
 
 	public get message(): string {
@@ -388,7 +384,7 @@ export class UserCodeRuntimeError extends UserCodeError {
 			.join('\n');
 	}
 
-	public get location(): { line: number; column: number } {
+	public get location(): { line: integer; column: integer } {
 		const stack = parse(this.error);
 		const originalPosition = this.sourceMap.originalPositionFor({
 			line: stack[0].getLineNumber()!,
@@ -403,9 +399,8 @@ export class UserCodeRuntimeError extends UserCodeError {
 	public static new(
 		error: Error,
 		sourceMap: SourceMapConsumer,
-		tsFileCache: Map<string, ts.SourceFile>,
 	): UserCodeRuntimeError {
-		return new UserCodeRuntimeError(error, sourceMap, tsFileCache);
+		return new UserCodeRuntimeError(error, sourceMap);
 	}
 }
 
@@ -515,7 +510,7 @@ export class ExecutionHarnessTypeError extends UserCodeTypeError {
 		);
 	}
 
-	public get location(): { line: number; column: number } {
+	public override get location(): { line: integer; column: integer } {
 		const userFile = this.sources.get(USER_CODE_FILENAME)!;
 		if (this.diagnostic.start === undefined) {
 			return {
@@ -701,7 +696,7 @@ declare module 'vm' {
 		): void;
 	}
 
-	export class SourceTextModule extends Module {
+	export class SourceTextModule extends vm.Module {
 		public constructor(
 			code: string,
 			options?: {
