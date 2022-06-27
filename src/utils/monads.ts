@@ -9,6 +9,20 @@ class ErrorWithContents<T> extends Error {
     this.contents = contents;
   }
 }
+
+export enum SerializedResultType {
+  Ok = 'Result.Ok',
+  Err = 'Result.Err',
+}
+
+export type SerializedResult<T, E> = {
+  $$type: SerializedResultType.Ok;
+  $$value: T;
+} | {
+  $$type: SerializedResultType.Err;
+  $$value: E;
+}
+
 /**
  * Result<T, E> is a type used for returning and propagating errors. It has the variants, Ok(T), representing success
  * and containing a value, and Err(E), representing error and containing an error value.
@@ -263,6 +277,41 @@ export class Result<T, E> {
     }
     return `Err(${this.unwrapErr()})`;
   }
+
+  public toJSON(): SerializedResult<T, E> {
+    if (this.isOk()) {
+      return {
+        $$type: SerializedResultType.Ok,
+        $$value: this.unwrap()
+      };
+    }
+    return {
+      $$type: SerializedResultType.Err,
+      $$value: this.unwrapErr()
+    };
+  }
+
+  public static fromJSON<T, E>(json: SerializedResult<T, E>): Result<T, E> {
+    if (json.$$type === SerializedResultType.Ok) {
+      return Result.Ok(json.$$value);
+    }
+    else if (json.$$type === SerializedResultType.Err) {
+      return Result.Err(json.$$value);
+    }
+    throw new Error(`Invalid JSON serialization of Result: ${JSON.stringify(json)}`);
+  }
+}
+
+export enum SerializedOptionType {
+  Some = 'Some',
+  None = 'None'
+}
+
+export type SerializedOption<T> = {
+  $$type: SerializedOptionType.Some,
+  $$value: T
+} | {
+  $$type: SerializedOptionType.None
 }
 
 /**
@@ -532,6 +581,28 @@ export class Option<T> {
       return `Some(${this.unwrap()})`;
     }
     return `None()`;
+  }
+
+  public toJSON(): SerializedOption<T> {
+    if (this.isSome()) {
+      return {
+        $$type: SerializedOptionType.Some,
+        $$value: this.unwrap()
+      };
+    }
+    return {
+      $$type: SerializedOptionType.None,
+    };
+  }
+
+  public static fromJSON<T, E>(json: SerializedOption<T>): Option<T> {
+    if (json.$$type === SerializedOptionType.Some) {
+      return Option.Some(json.$$value);
+    }
+    else if (json.$$type === SerializedOptionType.None) {
+      return Option.None()
+    }
+    throw new Error(`Invalid JSON serialization of Option: ${JSON.stringify(json)}`);
   }
 }
 
