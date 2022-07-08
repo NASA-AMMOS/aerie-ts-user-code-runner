@@ -183,6 +183,17 @@ export class UserCodeRunner {
 
 		const { jsFileMap, userCodeSourceMap } = result.unwrap();
 
+		return this.executeUserCodeFromArtifacts(jsFileMap, userCodeSourceMap, args, timeout, context);
+	}
+
+	public async executeUserCodeFromArtifacts<ArgsType extends any[], ReturnType = any>(
+		jsFileMap: {[key: string]: string},
+		sourceMap: string,
+		args: ArgsType,
+		timeout: number = 5000,
+		context: vm.Context = vm.createContext(),
+	): Promise<Result<ReturnType, UserCodeError[]>> {
+
 		// Put args and result into context
 		context.__args = args;
 		context.__result = undefined;
@@ -213,7 +224,7 @@ export class UserCodeRunner {
 			});
 			return Result.Ok(context.__result);
 		} catch (error: any) {
-			return Result.Err([UserCodeRuntimeError.new(error as Error, await new SourceMapConsumer(userCodeSourceMap))]);
+			return Result.Err([UserCodeRuntimeError.new(error as Error, await new SourceMapConsumer(sourceMap))]);
 		}
 	}
 }

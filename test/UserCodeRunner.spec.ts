@@ -46,48 +46,48 @@ describe('behavior', () => {
   });
 
   it('should produce runtime errors from additional files', async () => {
-  const userCode = `
-    export default function MyDSLFunction(thing: string): string {
-      throwingLibraryFunction();
-      return thing + ' world';
-    }
-    `.trimTemplate();
-
-  const runner = new UserCodeRunner();
-
-  const result = await runner.executeUserCode(
-    userCode,
-    ['hello'],
-    'string',
-    ['string'],
-    1000,
-    [
-      ts.createSourceFile('globals.ts', `
-      declare global {
-        function throwingLibraryFunction(): void;
+    const userCode = `
+      export default function MyDSLFunction(thing: string): string {
+        throwingLibraryFunction();
+        return thing + ' world';
       }
-      export function throwingLibraryFunction(): void {
-        throw new Error("Error in library code")
-      }
-      
-      Object.assign(globalThis, { throwingLibraryFunction });
-      `.trimTemplate(), ts.ScriptTarget.ESNext, true),
-    ],
-  );
+      `.trimTemplate();
 
-  expect(result.isErr()).toBeTruthy();
-  expect(result.unwrapErr().length).toBe(1);
-  expect(result.unwrapErr()[0].message).toBe(`
-    Error: Error in library code
-    `.trimTemplate());
-  expect(result.unwrapErr()[0].stack).toBe(`
-    at MyDSLFunction(2:2)
-    `.trimTemplate())
-  expect(result.unwrapErr()[0].location).toMatchObject({
-    line: 2,
-    column: 2,
+    const runner = new UserCodeRunner();
+
+    const result = await runner.executeUserCode(
+      userCode,
+      ['hello'],
+      'string',
+      ['string'],
+      1000,
+      [
+        ts.createSourceFile('globals.ts', `
+        declare global {
+          function throwingLibraryFunction(): void;
+        }
+        export function throwingLibraryFunction(): void {
+          throw new Error("Error in library code")
+        }
+        
+        Object.assign(globalThis, { throwingLibraryFunction });
+        `.trimTemplate(), ts.ScriptTarget.ESNext, true),
+      ],
+    );
+
+    expect(result.isErr()).toBeTruthy();
+    expect(result.unwrapErr().length).toBe(1);
+    expect(result.unwrapErr()[0].message).toBe(`
+      Error: Error in library code
+      `.trimTemplate());
+    expect(result.unwrapErr()[0].stack).toBe(`
+      at MyDSLFunction(2:2)
+      `.trimTemplate())
+    expect(result.unwrapErr()[0].location).toMatchObject({
+      line: 2,
+      column: 2,
+    });
   });
-});
 
   it('should produce return type errors', async () => {
     const userCode = `
@@ -634,13 +634,39 @@ describe('behavior', () => {
       Error: This is a test error
           at additionalFile:1:7
           at SourceTextModule.evaluate (node:internal/vm/module:224:23)
-          at UserCodeRunner.executeUserCode (/Users/jdstewar/gitRepos/jpl/mpcs/aerie/aerie-ts-user-code-runner/src/UserCodeRunner.ts:232:24)
+          at UserCodeRunner.executeUserCodeFromArtifacts (/Users/jdstewar/gitRepos/jpl/mpcs/aerie/aerie-ts-user-code-runner/src/UserCodeRunner.ts:222:24)
           at Object.<anonymous> (/Users/jdstewar/gitRepos/jpl/mpcs/aerie/aerie-ts-user-code-runner/test/UserCodeRunner.spec.ts:614:7)
       `.trimTemplate());
     }
   });
-})
 
+  it('should allow preprocessing of user code and subsequent execution', async () => {
+    const userCode = `
+    export default function MyDSLFunction(thing: string): string {
+      return thing + ' world';
+    }
+    `.trimTemplate();
+
+    const runner = new UserCodeRunner();
+
+    const result = await runner.preProcess(
+      userCode,
+      'string',
+      ['string'],
+    );
+
+    expect(result.isOk()).toBeTruthy();
+
+    const result2 = await runner.executeUserCodeFromArtifacts(
+      result.unwrap().jsFileMap,
+      result.unwrap().userCodeSourceMap,
+      ['hello'],
+    );
+
+    expect(result2.isOk()).toBeTruthy();
+    expect(result2.unwrap()).toBe('hello world');
+  });
+});
 
 describe('regression tests', () => {
   test('Aerie command expansion throw Regression Test', async () => {
