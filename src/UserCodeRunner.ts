@@ -1,12 +1,10 @@
 import vm from 'vm';
-import crypto from 'crypto';
 import path from 'path';
 import { defaultErrorCodeMessageMappers } from './defaultErrorCodeMessageMappers.js';
 import { createMapDiagnosticMessage } from './utils/errorMessageMapping.js';
 import ts from 'typescript';
 import { parse, StackFrame } from 'stack-trace';
 import { SourceMapConsumer } from 'source-map';
-import LRUCache from 'lru-cache';
 import { Result } from './utils/monads.js';
 import { TypeGuard } from './utils/typeGuardCombinators';
 
@@ -23,20 +21,13 @@ export interface CacheItem {
 }
 
 export interface UserCodeRunnerOptions {
-	cacheOptions?: LRUCache.Options<string, Result<CacheItem, UserCodeError[]>>;
 	typeErrorCodeMessageMappers?: {[errorCode: number]: (message: string) => string | undefined },// The error code to message mappers
 }
 
 export class UserCodeRunner {
-	private readonly user_file_cache: LRUCache<string, Result<CacheItem, UserCodeError[]>>;
 	private readonly mapDiagnosticMessage: ReturnType<typeof createMapDiagnosticMessage>;
 
 	constructor(options?: UserCodeRunnerOptions) {
-		this.user_file_cache = new LRUCache<string, Result<CacheItem, UserCodeError[]>>({
-			max: 500,
-			ttl: 1000 * 60 * 30,
-			...options?.cacheOptions
-		});
 		this.mapDiagnosticMessage = createMapDiagnosticMessage(options?.typeErrorCodeMessageMappers ?? defaultErrorCodeMessageMappers);
 	}
 
@@ -175,10 +166,6 @@ export class UserCodeRunner {
 		});
 	}
 
-	private static hash(str: string): string {
-		return crypto.createHash('sha1').update(str).digest('base64');
-	}
-
 	public async executeUserCode<ArgsType extends any[], ReturnType = any>(
 		userCode: string,
 		args: ArgsType,
@@ -188,15 +175,7 @@ export class UserCodeRunner {
 		additionalSourceFiles: ts.SourceFile[] = [],
 		context: vm.Context = vm.createContext(),
 	): Promise<Result<ReturnType, UserCodeError[]>> {
-		const userCodeHash = UserCodeRunner.hash(`${userCode}:${outputType}:${argsTypes.join(':')}${additionalSourceFiles.map(f => `:${f.text}`).join('')}`);
-
-		if (!this.user_file_cache.has(userCodeHash)) {
-			const result = await this.preProcess(userCode, outputType, argsTypes, additionalSourceFiles);
-
-			this.user_file_cache.set(userCodeHash, result);
-		}
-
-		const result = this.user_file_cache.get(userCodeHash)!;
+		const result = await this.preProcess(userCode, outputType, argsTypes, additionalSourceFiles);
 
 		if (result.isErr()) {
 			return result;
