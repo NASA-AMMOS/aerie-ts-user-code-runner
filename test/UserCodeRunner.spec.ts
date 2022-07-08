@@ -524,8 +524,34 @@ describe('behavior', () => {
 
     expect(result.isOk()).toBeTruthy();
   });
-})
 
+  it('should allow preprocessing of user code and subsequent execution', async () => {
+    const userCode = `
+    export default function MyDSLFunction(thing: string): string {
+      return thing + ' world';
+    }
+    `.trimTemplate();
+
+    const runner = new UserCodeRunner();
+
+    const result = await runner.preProcess(
+      userCode,
+      'string',
+      ['string'],
+    );
+
+    expect(result.isOk()).toBeTruthy();
+
+    const result2 = await runner.executeUserCodeFromArtifacts(
+      result.unwrap().jsFileMap,
+      result.unwrap().userCodeSourceMap,
+      ['hello'],
+    );
+
+    expect(result2.isOk()).toBeTruthy();
+    expect(result2.unwrap()).toBe('hello world');
+  })
+})
 
 describe('regression tests', () => {
   test('Aerie command expansion throw Regression Test', async () => {
