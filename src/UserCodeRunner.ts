@@ -390,9 +390,13 @@ export class UserCodeRuntimeError extends UserCodeError {
 
 	public get location(): { line: number; column: number } {
 		const stack = parse(this.error);
+		const userFileStackFrame = stack.find(callSite => callSite.getFileName() === USER_CODE_FILENAME);
+		if (userFileStackFrame === undefined) {
+			throw new Error('Runtime error detected outside of user code execution path. This is most likely a bug in the additional library source.');
+		}
 		const originalPosition = this.sourceMap.originalPositionFor({
-			line: stack[0].getLineNumber()!,
-			column: stack[0].getColumnNumber()!,
+			line: userFileStackFrame.getLineNumber()!,
+			column: userFileStackFrame.getColumnNumber()!,
 		});
 		return {
 			line: originalPosition.line!,
