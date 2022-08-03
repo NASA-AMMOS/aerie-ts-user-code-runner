@@ -4,7 +4,7 @@ import path from 'path';
 import { defaultErrorCodeMessageMappers } from './defaultErrorCodeMessageMappers.js';
 import { createMapDiagnosticMessage } from './utils/errorMessageMapping.js';
 import ts from 'typescript';
-import { parse } from 'stack-trace';
+import { parse, StackFrame } from 'stack-trace';
 import { BasicSourceMapConsumer, IndexedSourceMapConsumer, SourceMapConsumer } from 'source-map';
 import LRUCache from 'lru-cache';
 import { Result } from './utils/monads.js';
@@ -348,12 +348,19 @@ export class UserCodeRuntimeError extends UserCodeError {
 	private readonly error: Error;
 	private readonly sourceMap: SourceMapConsumer;
 	private readonly tsFileCache: Map<string, ts.SourceFile>;
+	private readonly stackFrames: StackFrame[];
 
 	protected constructor(error: Error, sourceMap: SourceMapConsumer, tsFileCache: Map<string, ts.SourceFile>) {
 		super();
 		this.error = error;
 		this.sourceMap = sourceMap;
 		this.tsFileCache = tsFileCache;
+		this.stackFrames = parse(this.error);
+		const userCodeFrame = this.stackFrames.find(frame => frame.getFileName() === USER_CODE_FILENAME);
+		if (userCodeFrame === undefined) {
+			this.error.message = 'Error: Runtime error detected outside of user code execution path. This is most likely a bug in the additional library source.\nInherited from:\n' + this.error.message;
+			throw this.error;
+		}
 	}
 
 	public get message(): string {
@@ -361,8 +368,7 @@ export class UserCodeRuntimeError extends UserCodeError {
 	}
 
 	public get stack(): string {
-		const stack = parse(this.error);
-		const stackWithoutHarness = stack
+		const stackWithoutHarness = this.stackFrames
 			.filter(callSite => callSite.getFileName()?.endsWith(USER_CODE_FILENAME))
 			.filter(callSite => {
 				if (callSite.getFileName() === undefined) {
@@ -390,10 +396,7 @@ export class UserCodeRuntimeError extends UserCodeError {
 
 	public get location(): { line: number; column: number } {
 		const stack = parse(this.error);
-		const userFileStackFrame = stack.find(callSite => callSite.getFileName() === USER_CODE_FILENAME);
-		if (userFileStackFrame === undefined) {
-			throw new Error('Runtime error detected outside of user code execution path. This is most likely a bug in the additional library source.');
-		}
+		const userFileStackFrame = stack.find(callSite => callSite.getFileName() === USER_CODE_FILENAME)!;
 		const originalPosition = this.sourceMap.originalPositionFor({
 			line: userFileStackFrame.getLineNumber()!,
 			column: userFileStackFrame.getColumnNumber()!,
