@@ -44,6 +44,50 @@ it('should produce runtime errors', async () => {
   });
 });
 
+it('should produce runtime errors from additional files', async () => {
+  const userCode = `
+    export default function MyDSLFunction(thing: string): string {
+      throwingLibraryFunction();
+      return thing + ' world';
+    }
+    `.trimTemplate();
+
+  const runner = new UserCodeRunner();
+
+  const result = await runner.executeUserCode(
+    userCode,
+    ['hello'],
+    'string',
+    ['string'],
+    1000,
+    [
+      ts.createSourceFile('globals.ts', `
+      declare global {
+        function throwingLibraryFunction(): void;
+      }
+      export function throwingLibraryFunction(): void {
+        throw new Error("Error in library code")
+      }
+      
+      Object.assign(globalThis, { throwingLibraryFunction });
+      `.trimTemplate(), ts.ScriptTarget.ESNext, true),
+    ],
+  );
+
+  expect(result.isErr()).toBeTruthy();
+  expect(result.unwrapErr().length).toBe(1);
+  expect(result.unwrapErr()[0].message).toBe(`
+    Error: Error in library code
+    `.trimTemplate());
+  expect(result.unwrapErr()[0].stack).toBe(`
+    at MyDSLFunction(2:2)
+    `.trimTemplate())
+  expect(result.unwrapErr()[0].location).toMatchObject({
+    line: 2,
+    column: 2,
+  });
+});
+
 it('should produce return type errors', async () => {
   const userCode = `
     export default function MyDSLFunction(thing: string): string {
@@ -841,7 +885,7 @@ test('Aerie scheduler unmapped harness error on missing property return type', a
   });
 });
 
-test('should handle unnamed arrow function default exports', async () => {
+it('should handle unnamed arrow function default exports', async () => {
   const userCode = `
     type ExpansionProps = { activity: ActivityType };
 
@@ -893,7 +937,7 @@ test('should handle unnamed arrow function default exports', async () => {
   });
 });
 
-test('should handle exported variable that references an arrow function', async () => {
+it('should handle exported variable that references an arrow function', async () => {
   const userCode = `
     type ExpansionProps = { activity: ActivityType };
 
@@ -946,7 +990,7 @@ test('should handle exported variable that references an arrow function', async 
   });
 });
 
-test('should handle exported variable that references a function', async () => {
+it('should handle exported variable that references a function', async () => {
   const userCode = `
     type ExpansionProps = { activity: ActivityType };
 
@@ -999,7 +1043,7 @@ test('should handle exported variable that references a function', async () => {
   });
 });
 
-test('should handle unnamed arrow function default exports assignment', async () => {
+it('should handle unnamed arrow function default exports assignment', async () => {
   const userCode = `
     type ExpansionProps = { activity: ActivityType };
 
@@ -1043,4 +1087,43 @@ test('should handle unnamed arrow function default exports assignment', async ()
   );
 
   expect(result.isOk()).toBeTruthy();
+});
+
+test('Aerie incorrect stack frame assumption regression test', async () => {
+  const userCode = `
+    export default () => {
+      return Real.Resource("state of charge").lessThan(0.3).split(0)
+    }
+    `.trimTemplate()
+
+  const runner = new UserCodeRunner();
+  const [constraintsAst, constraintsEdsl, modelSpecific] = await Promise.all([
+    fs.promises.readFile(new URL('./inputs/missing-location/constraints-ast.ts', import.meta.url).pathname, 'utf8'),
+    fs.promises.readFile(new URL('./inputs/missing-location/constraints-edsl-fluent-api.ts', import.meta.url).pathname, 'utf8'),
+    fs.promises.readFile(new URL('./inputs/missing-location/mission-model-generated-code.ts', import.meta.url).pathname, 'utf8'),
+  ]);
+
+  const result = await runner.executeUserCode(
+    userCode,
+    [],
+    'Constraint',
+    [],
+    undefined,
+    [
+      ts.createSourceFile('constraints-ast.ts', constraintsAst, ts.ScriptTarget.ESNext),
+      ts.createSourceFile('constraints-edsl-fluent-api.ts', constraintsEdsl, ts.ScriptTarget.ESNext),
+      ts.createSourceFile('mission-model-generated-code.ts', modelSpecific, ts.ScriptTarget.ESNext),
+    ],
+  );
+
+  expect(result.isErr()).toBeTruthy();
+  expect(result.unwrapErr().length).toBe(1);
+  expect(result.unwrapErr()[0].message).toBe(`Error: .split numberOfSubWindows cannot be less than 1, but was: 0`);
+  expect(result.unwrapErr()[0].stack).toBe(`
+    at default(2:56)
+    `.trimTemplate())
+  expect(result.unwrapErr()[0].location).toMatchObject({
+    line: 2,
+    column: 56,
+  });
 });
