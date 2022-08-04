@@ -1155,7 +1155,7 @@ it('should handle throws in library code outside default function execution path
           at additionalFile:1:7
           at SourceTextModule.evaluate (node:internal/vm/module:224:23)
           at UserCodeRunner.executeUserCode (/Users/jdstewar/gitRepos/jpl/mpcs/aerie/aerie-ts-user-code-runner/src/UserCodeRunner.ts:234:24)
-          at Object.<anonymous> (/Users/jdstewar/gitRepos/jpl/mpcs/aerie/aerie-ts-user-code-runner/test/UserCodeRunner.spec.ts:1090:5)
+          at Object.<anonymous> (/Users/jdstewar/gitRepos/jpl/mpcs/aerie/aerie-ts-user-code-runner/test/UserCodeRunner.spec.ts:1134:5)
       `.trimTemplate());
   }
 });
