@@ -1089,6 +1089,77 @@ it('should handle unnamed arrow function default exports assignment', async () =
   expect(result.isOk()).toBeTruthy();
 });
 
+it('should handle throws in user code but outside default function execution path', async () => {
+  const userCode = `
+    export default function MyDSLFunction(thing: string): string {
+      return thing + ' world';
+    }
+    
+    throw new Error('This is a test error');
+    `.trimTemplate();
+
+  const runner = new UserCodeRunner();
+
+  const result = await runner.executeUserCode(
+    userCode,
+    ['hello'],
+    'string',
+    ['string'],
+  );
+
+  expect(result.isErr()).toBeTruthy();
+  expect(result.unwrapErr().length).toBe(1);
+  expect(result.unwrapErr()[0].message).toBe(`
+    Error: This is a test error
+    `.trimTemplate());
+  expect(result.unwrapErr()[0].stack).toBe(`
+    at null(5:6)
+    `.trimTemplate())
+  expect(result.unwrapErr()[0].location).toMatchObject({
+    line: 5,
+    column: 6,
+  });
+});
+
+it('should handle throws in library code outside default function execution path with an explicit error', async () => {
+  const userCode = `
+    export default function MyDSLFunction(thing: string): string {
+      return thing + ' world';
+    }
+    `.trimTemplate();
+
+  const runner = new UserCodeRunner();
+
+  try {
+    await runner.executeUserCode(
+      userCode,
+      ['hello'],
+      'string',
+      ['string'],
+      1000,
+      [
+        ts.createSourceFile('additionalFile.ts', `
+      export {}
+      throw new Error('This is a test error');
+      `.trimTemplate(), ts.ScriptTarget.ESNext, true),
+      ],
+    );
+  } catch (err: any) {
+    expect(err.message).toBe(`
+      Error: Runtime error detected outside of user code execution path. This is most likely a bug in the additional library source.
+      Inherited from:
+      This is a test error
+      `.trimTemplate());
+    expect(err.stack).toBe(`
+      Error: This is a test error
+          at additionalFile:1:7
+          at SourceTextModule.evaluate (node:internal/vm/module:224:23)
+          at UserCodeRunner.executeUserCode (/Users/jdstewar/gitRepos/jpl/mpcs/aerie/aerie-ts-user-code-runner/src/UserCodeRunner.ts:234:24)
+          at Object.<anonymous> (/Users/jdstewar/gitRepos/jpl/mpcs/aerie/aerie-ts-user-code-runner/test/UserCodeRunner.spec.ts:1090:5)
+      `.trimTemplate());
+  }
+});
+
 test('Aerie incorrect stack frame assumption regression test', async () => {
   const userCode = `
     export default () => {
