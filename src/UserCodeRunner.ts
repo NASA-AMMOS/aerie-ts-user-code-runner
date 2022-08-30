@@ -1,12 +1,10 @@
 import vm from 'vm';
-import crypto from 'crypto';
 import path from 'path';
 import { defaultErrorCodeMessageMappers } from './defaultErrorCodeMessageMappers.js';
 import { createMapDiagnosticMessage } from './utils/errorMessageMapping.js';
 import ts from 'typescript';
 import { parse, StackFrame } from 'stack-trace';
-import { BasicSourceMapConsumer, IndexedSourceMapConsumer, SourceMapConsumer } from 'source-map';
-import LRUCache from 'lru-cache';
+import { SourceMapConsumer } from 'source-map';
 import { Result } from './utils/monads.js';
 import { TypeGuard } from './utils/typeGuardCombinators';
 
@@ -18,26 +16,18 @@ const EXECUTION_HARNESS_FILENAME = '__execution_harness';
 const USER_CODE_FILENAME = '__user_file';
 
 export interface CacheItem {
-	jsFileMap: Map<string, ts.SourceFile>;
-	tsFileMap: Map<string, ts.SourceFile>;
-	sourceMap: BasicSourceMapConsumer | IndexedSourceMapConsumer;
+	jsFileMap: {[key: string]: string};
+	userCodeSourceMap: string;
 }
 
 export interface UserCodeRunnerOptions {
-	cacheOptions?: LRUCache.Options<string, CacheItem>;
 	typeErrorCodeMessageMappers?: {[errorCode: number]: (message: string) => string | undefined },// The error code to message mappers
 }
 
 export class UserCodeRunner {
-	private readonly user_file_cache: LRUCache<string, CacheItem>;
 	private readonly mapDiagnosticMessage: ReturnType<typeof createMapDiagnosticMessage>;
 
 	constructor(options?: UserCodeRunnerOptions) {
-		this.user_file_cache = new LRUCache<string, CacheItem>({
-			max: 500,
-			ttl: 1000 * 60 * 30,
-			...options?.cacheOptions
-		});
 		this.mapDiagnosticMessage = createMapDiagnosticMessage(options?.typeErrorCodeMessageMappers ?? defaultErrorCodeMessageMappers);
 	}
 
@@ -88,8 +78,8 @@ export class UserCodeRunner {
 			tsFileMap.set(removeExt(additionalSourceFile.fileName), additionalSourceFile);
 		}
 
-		const jsFileMap = new Map<string, ts.SourceFile>();
-		const sourceMapMap = new Map<string, ts.SourceFile>();
+		const jsFileMap = {} as {[key: string]: string};
+		let userCodeSourceMap: string;
 
 		const defaultCompilerHost = ts.createCompilerHost({});
 		const customCompilerHost: ts.CompilerHost = {
@@ -109,12 +99,11 @@ export class UserCodeRunner {
 			writeFile: (fileName, data) => {
 				const filenameSansExt = removeExt(fileName);
 				if (fileName.endsWith('.map')) {
-					sourceMapMap.set(removeExt(filenameSansExt), ts.createSourceFile(removeExt(filenameSansExt), data, ts.ScriptTarget.ESNext));
+					if (removeExt(filenameSansExt) === USER_CODE_FILENAME) {
+						userCodeSourceMap = ts.createSourceFile(removeExt(filenameSansExt), data, ts.ScriptTarget.ESNext).text
+					}
 				} else {
-					jsFileMap.set(
-						filenameSansExt,
-						ts.createSourceFile(filenameSansExt, data, ts.ScriptTarget.ESNext, undefined, ts.ScriptKind.JS),
-					);
+					jsFileMap[filenameSansExt] = ts.createSourceFile(filenameSansExt, data, ts.ScriptTarget.ESNext, undefined, ts.ScriptKind.JS).text;
 				}
 			},
 			readFile(fileName: string): string | undefined {
@@ -159,8 +148,6 @@ export class UserCodeRunner {
 
 		const emitResult = program.emit();
 
-		const sourceMap = await new SourceMapConsumer(sourceMapMap.get(USER_CODE_FILENAME)!.text);
-
 		emitResult.diagnostics.forEach(diagnostic => {
 			if (diagnostic.file) {
 				sourceErrors.push(UserCodeTypeError.new(diagnostic, tsFileMap, typeChecker, this.mapDiagnosticMessage));
@@ -175,13 +162,8 @@ export class UserCodeRunner {
 
 		return Result.Ok({
 			jsFileMap,
-			tsFileMap,
-			sourceMap,
+			userCodeSourceMap: userCodeSourceMap!,
 		});
-	}
-
-	private static hash(str: string): string {
-		return crypto.createHash('sha1').update(str).digest('base64');
 	}
 
 	public async executeUserCode<ArgsType extends any[], ReturnType = any>(
@@ -193,18 +175,24 @@ export class UserCodeRunner {
 		additionalSourceFiles: ts.SourceFile[] = [],
 		context: vm.Context = vm.createContext(),
 	): Promise<Result<ReturnType, UserCodeError[]>> {
-		const userCodeHash = UserCodeRunner.hash(`${userCode}:${outputType}:${argsTypes.join(':')}${additionalSourceFiles.map(f => `:${f.text}`).join('')}`);
+		const result = await this.preProcess(userCode, outputType, argsTypes, additionalSourceFiles);
 
-		if (!this.user_file_cache.has(userCodeHash)) {
-			const result = await this.preProcess(userCode, outputType, argsTypes, additionalSourceFiles);
-
-			if (result.isErr()) {
-				return result;
-			}
-			this.user_file_cache.set(userCodeHash, result.unwrap());
+		if (result.isErr()) {
+			return result;
 		}
 
-		const { jsFileMap, tsFileMap, sourceMap } = this.user_file_cache.get(userCodeHash)!;
+		const { jsFileMap, userCodeSourceMap } = result.unwrap();
+
+		return this.executeUserCodeFromArtifacts(jsFileMap, userCodeSourceMap, args, timeout, context);
+	}
+
+	public async executeUserCodeFromArtifacts<ArgsType extends any[], ReturnType = any>(
+		jsFileMap: {[key: string]: string},
+		sourceMap: string,
+		args: ArgsType,
+		timeout: number = 5000,
+		context: vm.Context = vm.createContext(),
+	): Promise<Result<ReturnType, UserCodeError[]>> {
 
 		// Put args and result into context
 		context.__args = args;
@@ -212,11 +200,11 @@ export class UserCodeRunner {
 
 		// Create modules for VM
 		const moduleCache = new Map<string, vm.Module>();
-		for (const jsFile of jsFileMap.values()) {
+		for (const [fileName, content] of Object.entries(jsFileMap)) {
 			moduleCache.set(
-				jsFile.fileName,
-				new vm.SourceTextModule(jsFile.text, {
-					identifier: jsFile.fileName,
+				fileName,
+				new vm.SourceTextModule(content, {
+					identifier: fileName,
 					context,
 				}),
 			);
@@ -236,7 +224,7 @@ export class UserCodeRunner {
 			});
 			return Result.Ok(context.__result);
 		} catch (error: any) {
-			return Result.Err([UserCodeRuntimeError.new(error as Error, sourceMap, tsFileMap)]);
+			return Result.Err([UserCodeRuntimeError.new(error as Error, await new SourceMapConsumer(sourceMap))]);
 		}
 	}
 }
@@ -347,14 +335,12 @@ export class UserCodeTypeError extends UserCodeError {
 export class UserCodeRuntimeError extends UserCodeError {
 	private readonly error: Error;
 	private readonly sourceMap: SourceMapConsumer;
-	private readonly tsFileCache: Map<string, ts.SourceFile>;
 	private readonly stackFrames: StackFrame[];
 
-	protected constructor(error: Error, sourceMap: SourceMapConsumer, tsFileCache: Map<string, ts.SourceFile>) {
+	protected constructor(error: Error, sourceMap: SourceMapConsumer) {
 		super();
 		this.error = error;
 		this.sourceMap = sourceMap;
-		this.tsFileCache = tsFileCache;
 		this.stackFrames = parse(this.error);
 		const userCodeFrame = this.stackFrames.find(frame => frame.getFileName() === USER_CODE_FILENAME);
 		if (userCodeFrame === undefined) {
@@ -410,9 +396,8 @@ export class UserCodeRuntimeError extends UserCodeError {
 	public static new(
 		error: Error,
 		sourceMap: SourceMapConsumer,
-		tsFileCache: Map<string, ts.SourceFile>,
 	): UserCodeRuntimeError {
-		return new UserCodeRuntimeError(error, sourceMap, tsFileCache);
+		return new UserCodeRuntimeError(error, sourceMap);
 	}
 }
 
