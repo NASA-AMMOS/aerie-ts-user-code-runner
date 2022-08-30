@@ -630,13 +630,13 @@ describe('behavior', () => {
       Inherited from:
       This is a test error
       `.trimTemplate());
-      expect(err.stack).toBe(`
+      expect(err.stack).toContain(`
       Error: This is a test error
           at additionalFile:1:7
           at SourceTextModule.evaluate (node:internal/vm/module:224:23)
-          at UserCodeRunner.executeUserCodeFromArtifacts (/Users/jdstewar/gitRepos/jpl/mpcs/aerie/aerie-ts-user-code-runner/src/UserCodeRunner.ts:222:24)
-          at Object.<anonymous> (/Users/jdstewar/gitRepos/jpl/mpcs/aerie/aerie-ts-user-code-runner/test/UserCodeRunner.spec.ts:614:7)
       `.trimTemplate());
+      expect(err.stack).toMatch(/at UserCodeRunner\.executeUserCodeFromArtifacts \(\S+src\/UserCodeRunner\.ts:222:24/);
+      expect(err.stack).toMatch(/at Object\.<anonymous> \(\S+test\/UserCodeRunner\.spec\.ts:614:7/);
     }
   });
 
