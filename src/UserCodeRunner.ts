@@ -264,7 +264,7 @@ export abstract class UserCodeError {
 		return nodeList;
 	}
 
-	protected static getDescendentAtLocation(node: ts.Node, start: number, end: number): ts.Node | null {
+	protected static getDescendentAtLocation(node: ts.Node, start: number, end: number): ts.Node {
 		if (node.getStart() === start && node.getEnd() === end) {
 			return node;
 		}
@@ -273,7 +273,7 @@ export abstract class UserCodeError {
 				return UserCodeError.getDescendentAtLocation(child1, start, end);
 			}
 		}
-		return null;
+		return node;
 	}
 
 	public toJSON(): {

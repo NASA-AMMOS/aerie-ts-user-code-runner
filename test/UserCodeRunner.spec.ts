@@ -1198,3 +1198,55 @@ test('Aerie incorrect stack frame assumption regression test', async () => {
     column: 56,
   });
 });
+
+test('Unterminated string literal regression', async () => {
+  const userCode =
+    `export default () =>
+      Sequence.new({
+        seqId: 'seq0',
+        metadata: {},
+        commands: [
+          A('2020-001T00:00:00').ECHO("BDS_DIAG_SVC_CMD_CHANGE_MODE),
+        ],
+      });`.trimTemplate();
+
+  const runner = new UserCodeRunner();
+  const [commandTypes, temporalPolyfill] = await Promise.all([
+    fs.promises.readFile(new URL('./inputs/command-types.ts', import.meta.url).pathname, 'utf8'),
+    fs.promises.readFile(new URL('./inputs/TemporalPolyfillTypes.ts', import.meta.url).pathname, 'utf8'),
+  ]);
+
+  const result = await runner.executeUserCode(
+    userCode,
+    [],
+    'Sequence',
+    [],
+    1000,
+    [
+      ts.createSourceFile('command-types.ts', commandTypes, ts.ScriptTarget.ESNext),
+      ts.createSourceFile('TemporalPolyfillTypes.ts', temporalPolyfill, ts.ScriptTarget.ESNext),
+    ],
+    vm.createContext({
+      Temporal,
+    }),
+  );
+
+  expect(result.isErr()).toBeTruthy();
+  expect(result.unwrapErr().length).toBe(2);
+  expect(result.unwrapErr()[0].message).toBe(`TypeError: TS1002 Unterminated string literal.`);
+  expect(result.unwrapErr()[0].stack).toBe(`
+    at (6:70)
+    `.trimTemplate())
+  expect(result.unwrapErr()[0].location).toMatchObject({
+    line: 6,
+    column: 70,
+  });
+  expect(result.unwrapErr()[1].message).toBe(`TypeError: TS1005 ',' expected.`);
+  expect(result.unwrapErr()[1].stack).toBe(`
+    at (7:9)
+    `.trimTemplate())
+  expect(result.unwrapErr()[1].location).toMatchObject({
+    line: 7,
+    column: 9,
+  });
+});
