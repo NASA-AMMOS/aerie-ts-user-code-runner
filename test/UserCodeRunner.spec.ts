@@ -1011,7 +1011,7 @@ describe('regression tests', () => {
     expect(result.isErr()).toBeTruthy();
     expect(result.unwrapErr().length).toBe(1);
     expect(result.unwrapErr()[0].message).toBe(`
-    TypeError: TS2322 Incorrect return type. Expected: 'string', Actual: '"4" | 5'.
+    TypeError: TS2322 Incorrect return type. Expected: 'string', Actual: '5 | "4"'.
     `.trimTemplate());
     expect(result.unwrapErr()[0].stack).toBe(`
     at myGoal(1:1)
