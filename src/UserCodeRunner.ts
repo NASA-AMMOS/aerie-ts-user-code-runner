@@ -56,9 +56,13 @@ export class UserCodeRunner {
             
       declare global {
         const __args: [${argsTypes.join(', ')}];
-        let __result: ${outputType};
+        let __result: ${outputType} | Promise<${outputType}>;
       }
       __result = defaultExport(...__args);
+      
+      if ((__result as any) instanceof Promise) {
+      	__result = await __result;
+      }
     `;
 
 		const executionSourceFile = ts.createSourceFile(
@@ -442,11 +446,10 @@ export class ExecutionHarnessTypeError extends UserCodeTypeError {
 			this.diagnostic.messageText = `Default export is not a valid function. Expected a default export function with the signature: "(...args: ${this.argumentTypeNode.getText()}) => ${this.outputTypeNode.getText()}".`;
 			return;
 		}
-
-
 		// Errors in the return type of the user code default export
 		if (
 			diagnosticNode === this.executionHarnessResultNode
+			|| diagnosticNode === this.executionHarnessAsyncResultNode
 		) {
 			const returnType = callSignature.getReturnType();
 			const defaultExportedFunctionNodeReturnTypeNode = this.defaultExportedFunctionReturnNode;
@@ -576,6 +579,11 @@ export class ExecutionHarnessTypeError extends UserCodeTypeError {
 		return binaryExpression.left as ts.Identifier;
 	}
 
+	protected get executionHarnessAsyncResultNode(): ts.Identifier {
+		const binaryExpression = this.executionHarnessAsyncExpressionStatementNode;
+		return binaryExpression.left as ts.Identifier;
+	}
+
 	protected get executionHarnessDefaultFunctionCallNode(): ts.CallExpression {
 		const binaryExpression = this.executionHarnessExpressionStatementNode;
 		return binaryExpression.right as ts.CallExpression;
@@ -583,10 +591,18 @@ export class ExecutionHarnessTypeError extends UserCodeTypeError {
 
 	protected get executionHarnessExpressionStatementNode() {
 		const executionHarness = this.sources.get(EXECUTION_HARNESS_FILENAME)!;
-		const expressionStatement = executionHarness.statements.find(
-			s =>
-				s.kind === ts.SyntaxKind.ExpressionStatement,
-		)! as ts.ExpressionStatement;
+		const expressionStatement = executionHarness.statements.find(ts.isExpressionStatement)!;
+		return expressionStatement.expression as ts.BinaryExpression;
+	}
+
+	protected get executionHarnessAsyncExpressionStatementNode() {
+		const executionHarness = this.sources.get(EXECUTION_HARNESS_FILENAME)!;
+		const ifStatement = executionHarness.statements.find(ts.isIfStatement)!;
+
+		const thenStatement = ifStatement.thenStatement as ts.Block;
+
+		const expressionStatement = thenStatement.statements.find(ts.isExpressionStatement)!;
+
 		return expressionStatement.expression as ts.BinaryExpression;
 	}
 
@@ -605,10 +621,7 @@ export class ExecutionHarnessTypeError extends UserCodeTypeError {
 
 	protected get globalModuleDeclarationBlock(): ts.ModuleBlock {
 		const executionHarness = this.sources.get(EXECUTION_HARNESS_FILENAME)!;
-		const moduleDeclaration = executionHarness.statements.find(
-			s =>
-				s.kind === ts.SyntaxKind.ModuleDeclaration,
-		)! as ts.ModuleDeclaration;
+		const moduleDeclaration = executionHarness.statements.find(ts.isModuleDeclaration)!;
 		return moduleDeclaration.body! as ts.ModuleBlock;
 	}
 
