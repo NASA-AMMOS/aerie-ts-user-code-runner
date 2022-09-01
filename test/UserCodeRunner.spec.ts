@@ -113,7 +113,7 @@ describe('behavior', () => {
     expect(result.isErr()).toBeTruthy();
     expect(result.unwrapErr().length).toBe(1);
     expect(result.unwrapErr()[0].message).toBe(`
-    TypeError: TS2322 Incorrect return type. Expected: 'number', Actual: 'string'.
+    TypeError: TS2322 Incorrect return type. Expected: 'number | Promise<number>', Actual: 'string'.
     `.trimTemplate());
     expect(result.unwrapErr()[0].stack).toBe(`
     at MyDSLFunction(1:55)
@@ -183,7 +183,7 @@ describe('behavior', () => {
     expect(result.isErr()).toBeTruthy();
     expect(result.unwrapErr().length).toBe(1);
     expect(result.unwrapErr()[0].message).toBe(`
-    TypeError: TS1192 No default export. Expected a default export function with the signature: "(...args: [string]) => string".
+    TypeError: TS1192 No default export. Expected a default export function with the signature: "(...args: [string]) => string | Promise<string>".
     `.trimTemplate());
     expect(result.unwrapErr()[0].stack).toBe(`
     at (1:1)
@@ -218,7 +218,7 @@ describe('behavior', () => {
     expect(result.isErr()).toBeTruthy();
     expect(result.unwrapErr().length).toBe(1);
     expect(result.unwrapErr()[0].message).toBe(`
-    TypeError: TS2306 No default export. Expected a default export function with the signature: "(...args: [string]) => string".
+    TypeError: TS2306 No default export. Expected a default export function with the signature: "(...args: [string]) => string | Promise<string>".
     `.trimTemplate());
     expect(result.unwrapErr()[0].stack).toBe(`
     at (1:1)
@@ -255,7 +255,7 @@ describe('behavior', () => {
     expect(result.isErr()).toBeTruthy();
     expect(result.unwrapErr().length).toBe(1);
     expect(result.unwrapErr()[0].message).toBe(`
-    TypeError: TS2349 Default export is not a valid function. Expected a default export function with the signature: "(...args: [string]) => string".
+    TypeError: TS2349 Default export is not a valid function. Expected a default export function with the signature: "(...args: [string]) => string | Promise<string>".
     `.trimTemplate());
     expect(result.unwrapErr()[0].stack).toBe(`
     at (2:1)
@@ -406,7 +406,7 @@ describe('behavior', () => {
     expect(result.isErr()).toBeTruthy();
     expect(result.unwrapErr().length).toBe(3);
     expect(result.unwrapErr()[0].message).toBe(`
-    TypeError: TS2322 Incorrect return type. Expected: 'Command[] | Command | null', Actual: 'ExpansionReturn'.
+    TypeError: TS2322 Incorrect return type. Expected: 'Command[] | Command | null | Promise<Command[] | Command | null>', Actual: 'ExpansionReturn'.
     `.trimTemplate());
     expect(result.unwrapErr()[0].stack).toBe(`
     at (3:1)
@@ -459,7 +459,7 @@ describe('behavior', () => {
     expect(result.isErr()).toBeTruthy();
     expect(result.unwrapErr().length).toBe(3);
     expect(result.unwrapErr()[0].message).toBe(`
-    TypeError: TS2322 Incorrect return type. Expected: 'Command[] | Command | null', Actual: 'ExpansionReturn'.
+    TypeError: TS2322 Incorrect return type. Expected: 'Command[] | Command | null | Promise<Command[] | Command | null>', Actual: 'ExpansionReturn'.
     `.trimTemplate());
     expect(result.unwrapErr()[0].stack).toBe(`
     at (11:1)
@@ -512,7 +512,7 @@ describe('behavior', () => {
     expect(result.isErr()).toBeTruthy();
     expect(result.unwrapErr().length).toBe(3);
     expect(result.unwrapErr()[0].message).toBe(`
-    TypeError: TS2322 Incorrect return type. Expected: 'Command[] | Command | null', Actual: 'ExpansionReturn'.
+    TypeError: TS2322 Incorrect return type. Expected: 'Command[] | Command | null | Promise<Command[] | Command | null>', Actual: 'ExpansionReturn'.
     `.trimTemplate());
     expect(result.unwrapErr()[0].stack).toBe(`
     at (11:1)
@@ -635,8 +635,7 @@ describe('behavior', () => {
           at additionalFile:1:7
           at SourceTextModule.evaluate (node:internal/vm/module:224:23)
       `.trimTemplate());
-      expect(err.stack).toMatch(/at UserCodeRunner\.executeUserCodeFromArtifacts \(\S+src\/UserCodeRunner\.ts:222:24/);
-      expect(err.stack).toMatch(/at Object\.<anonymous> \(\S+test\/UserCodeRunner\.spec\.ts:614:7/);
+      expect(err.stack).toMatch(/at UserCodeRunner\.executeUserCodeFromArtifacts \(\S+src\/UserCodeRunner\.ts:226:24/);
     }
   });
 
@@ -665,6 +664,282 @@ describe('behavior', () => {
 
     expect(result2.isOk()).toBeTruthy();
     expect(result2.unwrap()).toBe('hello world');
+  });
+
+  describe('async user code', () => {
+    it('should produce runtime errors', async () => {
+      const userCode = `
+    export default async function MyDSLFunction(thing: string): Promise<string> {
+      subroutine();
+      return thing + ' world';
+    }
+    
+    function subroutine() {
+      throw new Error('This is a test error');
+    }
+    `.trimTemplate();
+
+      const runner = new UserCodeRunner();
+
+      const result = await runner.executeUserCode(
+        userCode,
+        ['hello'],
+        'string',
+        ['string'],
+      );
+
+      expect(result.isErr()).toBeTruthy();
+      expect(result.unwrapErr().length).toBe(1);
+      expect(result.unwrapErr()[0].message).toBe(`
+    Error: This is a test error
+    `.trimTemplate());
+      expect(result.unwrapErr()[0].stack).toBe(`
+    at subroutine(7:8)
+    at MyDSLFunction(2:2)
+    `.trimTemplate())
+      expect(result.unwrapErr()[0].location).toMatchObject({
+        line: 7,
+        column: 8,
+      });
+    });
+
+    it('should produce async runtime errors', async () => {
+      const userCode = `
+        export default async function MyDSLFunction(thing: string): Promise<string> {
+          await subroutine();
+          return thing + ' world';
+        }
+        
+        async function subroutine() {
+          throw new Error('This is a test error');
+        }
+        `.trimTemplate();
+
+      const runner = new UserCodeRunner();
+
+      const result = await runner.executeUserCode(
+        userCode,
+        ['hello'],
+        'string',
+        ['string'],
+      );
+
+      expect(result.isErr()).toBeTruthy();
+      expect(result.unwrapErr().length).toBe(1);
+      expect(result.unwrapErr()[0].message).toBe(`
+    Error: This is a test error
+    `.trimTemplate());
+      expect(result.unwrapErr()[0].stack).toBe(`
+        at subroutine(7:8)
+        at MyDSLFunction(2:8)
+        `.trimTemplate())
+      expect(result.unwrapErr()[0].location).toMatchObject({
+        line: 7,
+        column: 8,
+      });
+    });
+
+    it('should produce runtime errors from additional files', async () => {
+      const userCode = `
+      export default async function MyDSLFunction(thing: string): Promise<string> {
+        throwingLibraryFunction();
+        return thing + ' world';
+      }
+      `.trimTemplate();
+
+      const runner = new UserCodeRunner();
+
+      const result = await runner.executeUserCode(
+        userCode,
+        ['hello'],
+        'string',
+        ['string'],
+        1000,
+        [
+          ts.createSourceFile('globals.ts', `
+        declare global {
+          function throwingLibraryFunction(): void;
+        }
+        export function throwingLibraryFunction(): void {
+          throw new Error("Error in library code")
+        }
+        
+        Object.assign(globalThis, { throwingLibraryFunction });
+        `.trimTemplate(), ts.ScriptTarget.ESNext, true),
+        ],
+      );
+
+      expect(result.isErr()).toBeTruthy();
+      expect(result.unwrapErr().length).toBe(1);
+      expect(result.unwrapErr()[0].message).toBe(`
+      Error: Error in library code
+      `.trimTemplate());
+      expect(result.unwrapErr()[0].stack).toBe(`
+      at MyDSLFunction(2:2)
+      `.trimTemplate())
+      expect(result.unwrapErr()[0].location).toMatchObject({
+        line: 2,
+        column: 2,
+      });
+    });
+
+    it('should produce return type errors', async () => {
+      const userCode = `
+    export default async function MyDSLFunction(thing: string): Promise<string> {
+      subroutine();
+      return thing + ' world';
+    }
+    
+    function subroutine() {
+      throw new Error('This is a test error');
+    }
+    `.trimTemplate();
+
+      const runner = new UserCodeRunner();
+
+      const result = await runner.executeUserCode(
+        userCode,
+        ['hello'],
+        'number',
+        ['string'],
+      );
+
+      expect(result.isErr()).toBeTruthy();
+      expect(result.unwrapErr().length).toBe(1);
+      expect(result.unwrapErr()[0].message).toBe(`
+    TypeError: TS2322 Incorrect return type. Expected: 'number | Promise<number>', Actual: 'Promise<string>'.
+    `.trimTemplate());
+      expect(result.unwrapErr()[0].stack).toBe(`
+    at MyDSLFunction(1:61)
+    `.trimTemplate())
+      expect(result.unwrapErr()[0].location).toMatchObject({
+        line: 1,
+        column: 61,
+      });
+    });
+
+    it('should produce input type errors', async () => {
+      const userCode = `
+    export default async function MyDSLFunction(thing: string, other: number): Promise<string> {
+      subroutine();
+      return thing + ' world';
+    }
+    
+    function subroutine() {
+      throw new Error('This is a test error');
+    }
+    `.trimTemplate();
+
+      const runner = new UserCodeRunner();
+
+      const result = await runner.executeUserCode(
+        userCode,
+        ['hello'],
+        'string',
+        ['string'],
+      );
+
+      expect(result.isErr()).toBeTruthy();
+      expect(result.unwrapErr().length).toBe(1);
+      expect(result.unwrapErr()[0].message).toBe(`
+    TypeError: TS2554 Incorrect argument type. Expected: '[string]', Actual: '[string, number]'.
+    `.trimTemplate());
+      expect(result.unwrapErr()[0].stack).toBe(`
+    at MyDSLFunction(1:45)
+    `.trimTemplate())
+      expect(result.unwrapErr()[0].location).toMatchObject({
+        line: 1,
+        column: 45,
+      });
+    });
+
+    it('should produce internal type errors', async () => {
+      const userCode = `
+        export default async function MyDSLFunction(thing: string): Promise<number> {
+          const other: number = 'hello';
+          return thing + ' world';
+        }
+        `.trimTemplate();
+
+      const runner = new UserCodeRunner();
+
+      const result = await runner.executeUserCode(
+        userCode,
+        ['hello'],
+        'number',
+        ['string'],
+      );
+
+      expect(result.isErr()).toBeTruthy();
+      expect(result.unwrapErr().length).toBe(2);
+      expect(result.unwrapErr()[0].message).toBe(`
+    TypeError: TS2322 Type 'string' is not assignable to type 'number'.
+    `.trimTemplate());
+      expect(result.unwrapErr()[0].stack).toBe(`
+    at MyDSLFunction(2:9)
+    `.trimTemplate())
+      expect(result.unwrapErr()[0].location).toMatchObject({
+        line: 2,
+        column: 9,
+      });
+      expect(result.unwrapErr()[1].message).toBe(`
+    TypeError: TS2322 Type 'string' is not assignable to type 'number'.
+    `.trimTemplate());
+      expect(result.unwrapErr()[1].stack).toBe(`
+    at MyDSLFunction(3:3)
+    `.trimTemplate())
+      expect(result.unwrapErr()[1].location).toMatchObject({
+        line: 3,
+        column: 3,
+      });
+    });
+
+    it('should return the final value', async () => {
+      const userCode = `
+        export default async function MyDSLFunction(thing: string): Promise<string> {
+          return thing + ' world';
+        }
+        `.trimTemplate();
+
+      const runner = new UserCodeRunner();
+
+      const result = await runner.executeUserCode(
+        userCode,
+        ['hello'],
+        'string',
+        ['string'],
+      );
+
+      expect(result.isOk()).toBeTruthy();
+      expect(result.unwrap()).toBe('hello world');
+    });
+
+    it('should allow preprocessing of user code and subsequent execution', async () => {
+      const userCode = `
+        export default async function MyDSLFunction(thing: string): Promise<string> {
+          return thing + ' world';
+        }
+        `.trimTemplate();
+
+      const runner = new UserCodeRunner();
+
+      const result = await runner.preProcess(
+        userCode,
+        'string',
+        ['string'],
+      );
+
+      expect(result.isOk()).toBeTruthy();
+
+      const result2 = await runner.executeUserCodeFromArtifacts(
+        result.unwrap().jsFileMap,
+        result.unwrap().userCodeSourceMap,
+        ['hello'],
+      );
+
+      expect(result2.isOk()).toBeTruthy();
+      expect(result2.unwrap()).toBe('hello world');
+    });
   });
 });
 
@@ -750,7 +1025,7 @@ describe('regression tests', () => {
     expect(result.isErr()).toBeTruthy();
     expect(result.unwrapErr().length).toBe(4);
     expect(result.unwrapErr()[0].message).toBe(`
-    TypeError: TS2322 Incorrect return type. Expected: 'Command[] | Command | null', Actual: 'ExpansionReturn'.
+    TypeError: TS2322 Incorrect return type. Expected: 'Command[] | Command | null | Promise<Command[] | Command | null>', Actual: 'ExpansionReturn'.
     `.trimTemplate());
     expect(result.unwrapErr()[0].stack).toBe(`
     at BakeBananaBreadExpansionLogic(6:4)
@@ -933,7 +1208,7 @@ describe('regression tests', () => {
     expect(result.isErr()).toBeTruthy();
     expect(result.unwrapErr().length).toBe(1);
     expect(result.unwrapErr()[0].message).toBe(`
-    TypeError: TS2322 Incorrect return type. Expected: 'Goal', Actual: 'number'.
+    TypeError: TS2322 Incorrect return type. Expected: 'Goal | Promise<Goal>', Actual: 'number'.
     `.trimTemplate());
     expect(result.unwrapErr()[0].stack).toBe(`
     at myGoal(1:1)
@@ -1011,7 +1286,7 @@ describe('regression tests', () => {
     expect(result.isErr()).toBeTruthy();
     expect(result.unwrapErr().length).toBe(1);
     expect(result.unwrapErr()[0].message).toBe(`
-    TypeError: TS2322 Incorrect return type. Expected: 'string', Actual: '5 | "4"'.
+    TypeError: TS2322 Incorrect return type. Expected: 'string | Promise<string>', Actual: '5 | "4"'.
     `.trimTemplate());
     expect(result.unwrapErr()[0].stack).toBe(`
     at myGoal(1:1)
@@ -1054,7 +1329,7 @@ describe('regression tests', () => {
     expect(result.isErr()).toBeTruthy();
     expect(result.unwrapErr().length).toBe(1);
     expect(result.unwrapErr()[0].message).toBe(`
-    TypeError: TS2322 Incorrect return type. Expected: '4', Actual: 'number'.
+    TypeError: TS2322 Incorrect return type. Expected: '4 | Promise<4>', Actual: 'number'.
     `.trimTemplate());
     expect(result.unwrapErr()[0].stack).toBe(`
     at myGoal(1:1)
@@ -1099,7 +1374,7 @@ describe('regression tests', () => {
     expect(result.isErr()).toBeTruthy();
     expect(result.unwrapErr().length).toBe(3);
     expect(result.unwrapErr()[0].message).toBe(`
-    TypeError: TS2322 Incorrect return type. Expected: 'Command[] | Command | null', Actual: 'ExpansionReturn'.
+    TypeError: TS2322 Incorrect return type. Expected: 'Command[] | Command | null | Promise<Command[] | Command | null>', Actual: 'ExpansionReturn'.
     `.trimTemplate());
     expect(result.unwrapErr()[0].stack).toBe(`
     at SingleCommandExpansion(1:51)
@@ -1173,7 +1448,7 @@ describe('regression tests', () => {
 
     expect(result.isErr()).toBeTruthy();
     expect(result.unwrapErr().length).toBe(1);
-    expect(result.unwrapErr()[0].message).toBe(`TypeError: TS2741 Incorrect return type. Expected: 'Goal', Actual: 'FakeGoal'.`);
+    expect(result.unwrapErr()[0].message).toBe(`TypeError: TS2322 Incorrect return type. Expected: 'Goal | Promise<Goal>', Actual: 'FakeGoal'.`);
     expect(result.unwrapErr()[0].stack).toBe(`
     at (5:1)
     `.trimTemplate())
