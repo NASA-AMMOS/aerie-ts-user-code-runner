@@ -9,6 +9,121 @@ import * as vm from "vm";
 import * as fs from "fs";
 
 describe('behavior', () => {
+  describe('SECURITY', () => {
+
+    it('should have limited globals available for use', async () => {
+      const userCode = `
+      export default function MyDSLFunction() {
+        // @ts-ignore
+        return Object.keys(globalThis).join(',');
+      }
+      `.trimTemplate();
+  
+      const runner = new UserCodeRunner();
+  
+      const result = await runner.executeUserCode(
+        userCode,
+        [],
+        'string',
+        [],
+      );
+  
+      expect(result.isOk()).toBe(true);
+      expect(result.unwrap()).toBe('__args,__result');
+    });
+
+    it('process should not be accessible', async () => {
+      const userCode = `
+      export default function MyDSLFunction() {
+        // @ts-ignore
+        process.exit(1);
+      }
+      `.trimTemplate();
+
+      const runner = new UserCodeRunner();
+
+      const result = await runner.executeUserCode(
+        userCode,
+        [],
+        'void',
+        [],
+      );
+
+      expect(result.isErr()).toBe(true);
+      expect(result.unwrapErr().length).toBe(1);
+
+      expect(result.unwrapErr()[0].message).toBe('Error: process is not defined');
+    });
+
+    it('globalThis.process should not be accessible', async () => {
+      const userCode = `
+      export default function MyDSLFunction() {
+        // @ts-ignore
+        globalThis.process.exit(1);
+      }
+      `.trimTemplate();
+
+      const runner = new UserCodeRunner();
+
+      const result = await runner.executeUserCode(
+        userCode,
+        [],
+        'void',
+        [],
+      );
+
+      expect(result.isErr()).toBe(true);
+      expect(result.unwrapErr().length).toBe(1);
+
+      expect(result.unwrapErr()[0].message).toBe("Error: Cannot read properties of undefined (reading 'exit')");
+    });
+
+    it('fetch should not be accessible', async () => {
+      const userCode = `
+      export default function MyDSLFunction() {
+        // @ts-ignore
+        fetch('http://example.com');
+      }
+      `.trimTemplate();
+
+      const runner = new UserCodeRunner();
+
+      const result = await runner.executeUserCode(
+        userCode,
+        [],
+        'void',
+        [],
+      );
+
+      expect(result.isErr()).toBe(true);
+      expect(result.unwrapErr().length).toBe(1);
+
+      expect(result.unwrapErr()[0].message).toBe('Error: fetch is not defined');
+    });
+
+    it('globalThis.fetch should not be accessible', async () => {
+      const userCode = `
+      export default function MyDSLFunction() {
+        globalThis.fetch('http://example.com');
+      }
+      `.trimTemplate();
+
+      const runner = new UserCodeRunner();
+
+      const result = await runner.executeUserCode(
+        userCode,
+        [],
+        'void',
+        [],
+      );
+
+      expect(result.isErr()).toBe(true);
+      expect(result.unwrapErr().length).toBe(1);
+
+      expect(result.unwrapErr()[0].message).toBe('Error: globalThis.fetch is not a function');
+    });
+  });
+
   it('should produce runtime errors', async () => {
     const userCode = `
     export default function MyDSLFunction(thing: string): string {
@@ -633,9 +748,9 @@ describe('behavior', () => {
       expect(err.stack).toContain(`
       Error: This is a test error
           at additionalFile:1:7
-          at SourceTextModule.evaluate (node:internal/vm/module:224:23)
       `.trimTemplate());
-      expect(err.stack).toMatch(/at UserCodeRunner\.executeUserCodeFromArtifacts \(\S+src\/UserCodeRunner\.ts:226:24/);
+      expect(err.stack).toMatch(/at SourceTextModule.evaluate \(node:internal\/vm\/module:\d+:\d+\)/);
+      expect(err.stack).toMatch(/at UserCodeRunner\.executeUserCodeFromArtifacts \(\S+src\/UserCodeRunner\.ts:\d+:\d+/);
     }
   });
 
