@@ -633,7 +633,7 @@ describe('behavior', () => {
       expect(err.stack).toContain(`
       Error: This is a test error
           at additionalFile:1:7
-          at SourceTextModule.evaluate (node:internal/vm/module:224:23)
+          at SourceTextModule.evaluate (node:internal/vm/module:226:23)
       `.trimTemplate());
       expect(err.stack).toMatch(/at UserCodeRunner\.executeUserCodeFromArtifacts \(\S+src\/UserCodeRunner\.ts:226:24/);
     }
