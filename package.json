@@ -1,6 +1,6 @@
 {
   "name": "@nasa-jpl/aerie-ts-user-code-runner",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "A simple way to safely run user code written in Typescript.",
   "main": "build/UserCodeRunner.js",
   "type": "module",
@@ -18,7 +18,7 @@
     "stack-trace": "^1.0.0-pre1"
   },
   "peerDependencies": {
-    "typescript": "4.x"
+    "typescript": "4.x || 5.x"
   },
   "devDependencies": {
     "@js-temporal/polyfill": "^0.4.3",
@@ -30,7 +30,7 @@
     "ts-jest": "^29.0.3",
     "ts-node": "^10.9.1",
     "typedoc": "^0.23.17",
-    "typescript": "^4"
+    "typescript": "^5"
   },
   "jest": {
     "preset": "ts-jest/presets/default-esm",
