@@ -1,5 +1,7 @@
 // @ts-ignore
 import './inputs/polyfills';
+import { describe, it, test } from 'node:test';
+import { expect } from 'expect';
 import {UserCodeRunner} from "../src/UserCodeRunner";
 import {installStringUtils} from "../src/utils/stringUtils";
 installStringUtils();

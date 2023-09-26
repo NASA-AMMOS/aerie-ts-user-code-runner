@@ -1,4 +1,6 @@
 import {dedent, indent, installStringUtils, trimTemplate} from "../src/utils/stringUtils";
+import { describe, it, beforeEach } from 'node:test';
+import { expect } from 'expect';
 
 describe('indent', () => {
   it('should indent a string', () => {

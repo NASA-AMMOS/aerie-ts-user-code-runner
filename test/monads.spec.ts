@@ -1,4 +1,6 @@
 import { Option, Result, SerializedOptionType, SerializedResultType } from '../src/utils/monads';
+import { describe, it } from 'node:test';
+import { expect } from 'expect';
 
 describe('Result', () => {
 	it('should be serializable and deserializable', () => {

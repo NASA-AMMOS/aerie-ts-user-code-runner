@@ -10,7 +10,7 @@
     "clean": "rm -rf build && rm -rf docs",
     "doc": "typedoc",
     "prepare": "npm run build && npm run doc",
-    "test": "node --experimental-vm-modules --enable-source-maps node_modules/jest/bin/jest.js",
+    "test": "node --experimental-vm-modules --test --loader tsx `glob 'test/**/*.spec.ts'`",
     "watch": "tsc -p tsconfig.json --watch"
   },
   "dependencies": {
@@ -22,36 +22,13 @@
   },
   "devDependencies": {
     "@js-temporal/polyfill": "^0.4.3",
-    "@types/jest": "^29.2.0",
     "@types/node": "^18.11.2",
     "@types/stack-trace": "^0.0.30",
-    "jest": "^29.2.1",
+    "expect": "^29",
+    "glob": "^10",
     "prettier": "^2.7.1",
-    "ts-jest": "^29.0.3",
-    "ts-node": "^10.9.1",
+    "tsx": "^3",
     "typedoc": "^0.23.17",
     "typescript": "^5"
-  },
-  "jest": {
-    "preset": "ts-jest/presets/default-esm",
-    "testEnvironment": "node",
-    "transform": {
-      "^.+\\.m?[tj]sx?$": [
-        "ts-jest",
-        {
-          "useESM": true
-        }
-      ]
-    },
-    "moduleNameMapper": {
-      "^(\\.{1,2}/.*)\\.js$": "$1"
-    },
-    "extensionsToTreatAsEsm": [
-      ".ts"
-    ],
-    "testMatch": [
-      "**/__tests__/**/*.test.ts",
-      "**/?(*.)+(spec|test).ts"
-    ]
   }
 }
