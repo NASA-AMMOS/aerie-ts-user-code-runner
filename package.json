@@ -14,6 +14,7 @@
     "watch": "tsc -p tsconfig.json --watch"
   },
   "dependencies": {
+    "isolated-vm": "6.0.2",
     "source-map": "^0.7.4",
     "stack-trace": "^1.0.0-pre1"
   },
@@ -30,5 +31,9 @@
     "tsx": "^3",
     "typedoc": "^0.23.17",
     "typescript": "^5"
+  },
+  "allowScripts": {
+    "esbuild@0.18.20": true,
+    "fsevents@2.3.3": true
   }
 }
