@@ -1,4 +1,4 @@
-import vm from 'vm';
+import ivm from 'isolated-vm';
 import path from 'path';
 import { defaultErrorCodeMessageMappers } from './defaultErrorCodeMessageMappers.js';
 import { createMapDiagnosticMessage } from './utils/errorMessageMapping.js';
@@ -14,6 +14,8 @@ export { defaultErrorCodeMessageMappers } from './defaultErrorCodeMessageMappers
 
 const EXECUTION_HARNESS_FILENAME = '__execution_harness';
 const USER_CODE_FILENAME = '__user_file';
+
+export type UserCodeGlobals = Record<string, unknown>;
 
 export interface CacheItem {
 	jsFileMap: { [key: string]: string };
@@ -191,7 +193,7 @@ export class UserCodeRunner {
 		argsTypes: string[] = ['any'],
 		timeout: number = 5000,
 		additionalSourceFiles: ts.SourceFile[] = [],
-		context: vm.Context = vm.createContext(),
+		globals: UserCodeGlobals = {}
 	): Promise<Result<ReturnType, UserCodeError[]>> {
 		const result = await this.preProcess(userCode, outputType, argsTypes, additionalSourceFiles);
 
@@ -201,53 +203,81 @@ export class UserCodeRunner {
 
 		const { jsFileMap, userCodeSourceMap } = result.unwrap();
 
-		return this.executeUserCodeFromArtifacts(jsFileMap, userCodeSourceMap, args, timeout, context);
+		return this.executeUserCodeFromArtifacts(jsFileMap, userCodeSourceMap, args, timeout, globals);
 	}
 
-	public async executeUserCodeFromArtifacts<ArgsType extends any[], ReturnType = any>(
-		jsFileMap: { [key: string]: string },
+	public async executeUserCodeFromArtifacts<ArgsType extends unknown[], OutputType>(
+		jsFileMap: Record<string, string>,
 		sourceMap: string,
 		args: ArgsType,
-		timeout: number = 5000,
-		context: vm.Context = vm.createContext(),
-	): Promise<Result<ReturnType, UserCodeError[]>> {
-		// Put args and result into context
-		context.__args = args;
-		context.__result = undefined;
-
-		// Create modules for VM
-		const moduleCache = new Map<string, vm.Module>();
-		for (const [fileName, content] of Object.entries(jsFileMap)) {
-			moduleCache.set(
-				fileName,
-				new vm.SourceTextModule(content, {
-					identifier: fileName,
-					context,
-				}),
-			);
-		}
-		const harnessModule = moduleCache.get(EXECUTION_HARNESS_FILENAME)!;
-		await harnessModule.link(specifier => {
-			const filenameSansExt = removeExt(specifier);
-			if (moduleCache.has(filenameSansExt)) {
-				return moduleCache.get(filenameSansExt)!;
-			}
-			throw new Error(`Unable to resolve dependency: ${specifier}`);
+		timeout = 5000,
+		globals: UserCodeGlobals = {},
+	): Promise<Result<OutputType, UserCodeError[]>> {
+		// create an isolated VM + context
+		const isolate = new ivm.Isolate({
+			memoryLimit: 128,
 		});
 
 		try {
-			await harnessModule.evaluate({
-				timeout,
+			const context = isolate.createContextSync();
+			const global = context.global;
+
+			// put args and result into context
+			// any objects from host must be set with {copy: true}, this creates guest-owned deep clones of originals,
+			// not live host objects whose prototypes or constructors could expose host capabilities.
+			global.setSync('__args', args, { copy: true });
+			global.setSync('__result', undefined);
+
+			// put user-provided globals into context
+			for (const [name, value] of Object.entries(globals)) {
+				if (name === '__args' || name === '__result') {
+					throw new Error(`Reserved global name: ${name}`);
+				}
+				global.setSync(name, value, { copy: true });
+			}
+
+			// Create modules for VM
+			const moduleCache = new Map<string, ivm.Module>();
+			for (const [fileName, content] of Object.entries(jsFileMap)) {
+				moduleCache.set(
+					fileName,
+					isolate.compileModuleSync(content, {
+						filename: fileName,
+					}),
+				);
+			}
+
+			// the harness module imports and invokes the user module,
+			// keeping execution and result capture inside the isolated context.
+			const harnessModule = moduleCache.get(EXECUTION_HARNESS_FILENAME);
+			if (harnessModule === undefined) {
+				throw new Error('Execution harness module is missing');
+			}
+			// recursively resolve & link the harness module’s imports
+			harnessModule.instantiateSync(context, specifier => {
+				// module names currently use a flat namespace; directory paths and extensions are discarded.
+				const filenameSansExt = removeExt(specifier);
+				const module = moduleCache.get(filenameSansExt);
+				if (module === undefined) {
+					throw new Error(`Unable to resolve dependency: ${specifier}`);
+				}
+				return module;
 			});
-			const result = context.__result;
-			delete context.__args;
-			delete context.__result;
-			return Result.Ok(result);
-		} catch (error: any) {
+
+			// evaluate the resolved module
+			await harnessModule.evaluate({ timeout });
+			// copy guest results out as host-owned data; don't expose live guest reference.
+			const value = await global.get('__result', { copy: true });
+
+			return Result.Ok(value as OutputType);
+		} catch (error) {
 			return Result.Err([UserCodeRuntimeError.new(error as Error, await new SourceMapConsumer(sourceMap))]);
+		} finally {
+			isolate.dispose();
 		}
 	}
 }
+
 
 // Base error type for the User Code Runner
 export abstract class UserCodeError {

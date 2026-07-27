@@ -1,8 +1,7 @@
-import vm from 'node:vm';
 import { describe, it } from 'node:test';
 import { expect } from 'expect';
 
-import { UserCodeRunner } from '../src/UserCodeRunner';
+import { UserCodeRunner, UserCodeGlobals } from '../src/UserCodeRunner';
 
 const PROCESS_UNAVAILABLE = 'process unavailable';
 
@@ -21,14 +20,14 @@ const PROCESS_UNAVAILABLE = 'process unavailable';
 interface ExecuteOptions {
 	args?: unknown[];
 	argsTypes?: string[];
-	context?: vm.Context;
+	globals?: UserCodeGlobals;
 }
 
 async function execute(source: string, options: ExecuteOptions = {}): Promise<unknown> {
 	const args = options.args ?? [];
 	const argsTypes = options.argsTypes ?? args.map(() => 'any');
 
-	const result = await new UserCodeRunner().executeUserCode(source, args, 'any', argsTypes, 1000, [], options.context);
+	const result = await new UserCodeRunner().executeUserCode(source, args, 'any', argsTypes, 1000, [], options.globals);
 
 	return result.unwrap();
 }
@@ -103,11 +102,7 @@ describe('UserCodeRunner isolation', () => {
 		expect(value).toBe(PROCESS_UNAVAILABLE);
 	});
 
-	it('does not expose process through an explicitly provided context value', async () => {
-		const context = vm.createContext({
-			hostValue: {},
-		});
-
+	it('does not expose process through an explicitly provided globals value', async () => {
 		const value = await execute(
 			`
 				declare const hostValue: any;
@@ -122,7 +117,10 @@ describe('UserCodeRunner isolation', () => {
 					}
 				}
 			`,
-			{ args: [], context },
+			{
+				args: [],
+				globals: { hostValue: {} },
+			},
 		);
 
 		expect(value).toBe(PROCESS_UNAVAILABLE);
