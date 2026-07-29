@@ -473,9 +473,11 @@ describe('behavior', () => {
       }
       `.trimTemplate(), ts.ScriptTarget.ESNext, true)
       ],
-      vm.createContext({
-        someGlobalFunction: (thing: string) => 'hello ' + thing, // Implementation injected to global namespace here
-      }),
+			{
+				globals: {
+					someGlobalFunction: (thing: string) => 'hello ' + thing, // Implementation injected to global namespace here
+				}
+			}
     );
 
     // expect(result.isOk()).toBeTruthy();
@@ -503,9 +505,6 @@ describe('behavior', () => {
       fs.promises.readFile(new URL('./inputs/TemporalPolyfillTypes.ts', import.meta.url).pathname, 'utf8'),
     ]);
 
-    const context = vm.createContext({
-      Temporal,
-    });
     const result = await runner.executeUserCode(
       userCode,
       [{ activity: null}],
@@ -517,7 +516,7 @@ describe('behavior', () => {
         ts.createSourceFile('activity-types.ts', activityTypes, ts.ScriptTarget.ESNext, true),
         ts.createSourceFile('TemporalPolyfillTypes.ts', temporalPolyfill, ts.ScriptTarget.ESNext, true),
       ],
-      context,
+			{ globals: { Temporal } },
     );
 
     expect(result.isErr()).toBeTruthy();
@@ -556,9 +555,6 @@ describe('behavior', () => {
       fs.promises.readFile(new URL('./inputs/TemporalPolyfillTypes.ts', import.meta.url).pathname, 'utf8'),
     ]);
 
-    const context = vm.createContext({
-      Temporal,
-    });
     const result = await runner.executeUserCode(
       userCode,
       [{ activity: null}],
@@ -570,7 +566,7 @@ describe('behavior', () => {
         ts.createSourceFile('activity-types.ts', activityTypes, ts.ScriptTarget.ESNext, true),
         ts.createSourceFile('TemporalPolyfillTypes.ts', temporalPolyfill, ts.ScriptTarget.ESNext, true),
       ],
-      context,
+			{ globals: { Temporal } },
     );
 
     expect(result.isErr()).toBeTruthy();
@@ -609,22 +605,19 @@ describe('behavior', () => {
       fs.promises.readFile(new URL('./inputs/TemporalPolyfillTypes.ts', import.meta.url).pathname, 'utf8'),
     ]);
 
-    const context = vm.createContext({
-      Temporal,
-    });
     const result = await runner.executeUserCode(
-      userCode,
-      [{ activity: null}],
-      'Command[] | Command | null',
-      ['{ activity: ActivityType }'],
-      1000,
-      [
-        ts.createSourceFile('command-types.ts', commandTypes, ts.ScriptTarget.ESNext, true),
-        ts.createSourceFile('activity-types.ts', activityTypes, ts.ScriptTarget.ESNext, true),
-        ts.createSourceFile('TemporalPolyfillTypes.ts', temporalPolyfill, ts.ScriptTarget.ESNext, true),
-      ],
-      context,
-    );
+			userCode,
+			[{ activity: null }],
+			'Command[] | Command | null',
+			['{ activity: ActivityType }'],
+			1000,
+			[
+				ts.createSourceFile('command-types.ts', commandTypes, ts.ScriptTarget.ESNext, true),
+				ts.createSourceFile('activity-types.ts', activityTypes, ts.ScriptTarget.ESNext, true),
+				ts.createSourceFile('TemporalPolyfillTypes.ts', temporalPolyfill, ts.ScriptTarget.ESNext, true),
+			],
+			{ globals: { Temporal } },
+		);
 
     expect(result.isErr()).toBeTruthy();
     expect(result.unwrapErr().length).toBe(3);
@@ -666,9 +659,6 @@ describe('behavior', () => {
       fs.promises.readFile(new URL('./inputs/TemporalPolyfillTypes.ts', import.meta.url).pathname, 'utf8'),
     ]);
 
-    const context = vm.createContext({
-      Temporal,
-    });
     const result = await runner.executeUserCode(
       userCode,
       [{ activity: { attributes: { arguments: { primitiveLong: 1 } } } }],
@@ -680,7 +670,7 @@ describe('behavior', () => {
         ts.createSourceFile('activity-types.ts', activityTypes, ts.ScriptTarget.ESNext, true),
         ts.createSourceFile('TemporalPolyfillTypes.ts', temporalPolyfill, ts.ScriptTarget.ESNext, true),
       ],
-      context,
+			{ globals: { Temporal } },
     );
 
     expect(result.isOk()).toBeTruthy();
@@ -1076,22 +1066,19 @@ describe('regression tests', () => {
       fs.promises.readFile(new URL('./inputs/TemporalPolyfillTypes.ts', import.meta.url).pathname, 'utf8'),
     ]);
 
-    const context = vm.createContext({
-      Temporal,
-    });
     const result = await runner.executeUserCode(
-      userCode,
-      [{ activity: null }],
-      'Command[] | Command | null',
-      ['{ activity: ActivityType }'],
-      1000,
-      [
-        ts.createSourceFile('command-types.ts', commandTypes, ts.ScriptTarget.ESNext, true),
-        ts.createSourceFile('activity-types.ts', activityTypes, ts.ScriptTarget.ESNext, true),
-        ts.createSourceFile('TemporalPolyfillTypes.ts', temporalPolyfill, ts.ScriptTarget.ESNext, true),
-      ],
-      context,
-    );
+			userCode,
+			[{ activity: null }],
+			'Command[] | Command | null',
+			['{ activity: ActivityType }'],
+			1000,
+			[
+				ts.createSourceFile('command-types.ts', commandTypes, ts.ScriptTarget.ESNext, true),
+				ts.createSourceFile('activity-types.ts', activityTypes, ts.ScriptTarget.ESNext, true),
+				ts.createSourceFile('TemporalPolyfillTypes.ts', temporalPolyfill, ts.ScriptTarget.ESNext, true),
+			],
+			{ globals: { Temporal } },
+		);
 
     expect(result.unwrap()).toMatchObject({
       stem: 'BAKE_BREAD',
@@ -1122,9 +1109,6 @@ describe('regression tests', () => {
       fs.promises.readFile(new URL('./inputs/TemporalPolyfillTypes.ts', import.meta.url).pathname, 'utf8'),
     ]);
 
-    const context = vm.createContext({
-      Temporal,
-    });
     const result = await runner.executeUserCode(
       userCode,
       [{ activityInstance: null }, {}],
@@ -1136,7 +1120,7 @@ describe('regression tests', () => {
         ts.createSourceFile('activity-types.ts', activityTypes, ts.ScriptTarget.ESNext, true),
         ts.createSourceFile('TemporalPolyfillTypes.ts', temporalPolyfill, ts.ScriptTarget.ESNext, true),
       ],
-      context,
+			{}
     );
 
     expect(result.isErr()).toBeTruthy();
@@ -1207,7 +1191,6 @@ describe('regression tests', () => {
       fs.promises.readFile(new URL('./inputs/mission-model-generated-code.ts', import.meta.url).pathname, 'utf8'),
     ]);
 
-    const context = vm.createContext({});
     const result = await runner.executeUserCode(
       userCode,
       [],
@@ -1219,7 +1202,7 @@ describe('regression tests', () => {
         ts.createSourceFile('scheduler-edsl-fluent-api.ts', schedulerEdsl, ts.ScriptTarget.ESNext),
         ts.createSourceFile('mission-model-generated-code.ts', modelSpecific, ts.ScriptTarget.ESNext),
       ],
-      context,
+			{},
     );
 
     expect(result.unwrap()).toMatchObject({
@@ -1263,7 +1246,6 @@ describe('regression tests', () => {
       fs.promises.readFile(new URL('./inputs/dsl-model-specific--2345.ts', import.meta.url).pathname, 'utf8'),
     ]);
 
-    const context = vm.createContext({});
     const result = await runner.executeUserCode(
       userCode,
       [],
@@ -1275,7 +1257,7 @@ describe('regression tests', () => {
         ts.createSourceFile('scheduler-edsl-fluent-api.ts', schedulerEdsl, ts.ScriptTarget.ESNext),
         ts.createSourceFile('mission-model-generated-code.ts', modelSpecific, ts.ScriptTarget.ESNext),
       ],
-      context,
+			{},
     );
 
     expect(result.isErr()).toBeTruthy();
@@ -1307,20 +1289,19 @@ describe('regression tests', () => {
       fs.promises.readFile(new URL('./inputs/mission-model-generated-code.ts', import.meta.url).pathname, 'utf8'),
     ]);
 
-    const context = vm.createContext({});
     const result = await runner.executeUserCode(
-      userCode,
-      [],
-      'Goal',
-      [],
-      undefined,
-      [
-        ts.createSourceFile('scheduler-ast.ts', schedulerAst, ts.ScriptTarget.ESNext),
-        ts.createSourceFile('scheduler-edsl-fluent-api.ts', schedulerEdsl, ts.ScriptTarget.ESNext),
-        ts.createSourceFile('mission-model-generated-code.ts', modelSpecific, ts.ScriptTarget.ESNext),
-      ],
-      context,
-    );
+			userCode,
+			[],
+			'Goal',
+			[],
+			undefined,
+			[
+				ts.createSourceFile('scheduler-ast.ts', schedulerAst, ts.ScriptTarget.ESNext),
+				ts.createSourceFile('scheduler-edsl-fluent-api.ts', schedulerEdsl, ts.ScriptTarget.ESNext),
+				ts.createSourceFile('mission-model-generated-code.ts', modelSpecific, ts.ScriptTarget.ESNext),
+			],
+			{},
+		);
 
     expect(result.isErr()).toBeTruthy();
     expect(result.unwrapErr().length).toBe(1);
@@ -1350,7 +1331,6 @@ describe('regression tests', () => {
       fs.promises.readFile(new URL('./inputs/mission-model-generated-code.ts', import.meta.url).pathname, 'utf8'),
     ]);
 
-    const context = vm.createContext({});
     const result = await runner.executeUserCode(
       userCode,
       [],
@@ -1362,7 +1342,7 @@ describe('regression tests', () => {
         ts.createSourceFile('scheduler-edsl-fluent-api.ts', schedulerEdsl, ts.ScriptTarget.ESNext),
         ts.createSourceFile('mission-model-generated-code.ts', modelSpecific, ts.ScriptTarget.ESNext),
       ],
-      context,
+			{}
     );
 
     expect(result.isOk()).toBeTruthy();
@@ -1385,7 +1365,6 @@ describe('regression tests', () => {
       fs.promises.readFile(new URL('./inputs/mission-model-generated-code.ts', import.meta.url).pathname, 'utf8'),
     ]);
 
-    const context = vm.createContext({});
     const result = await runner.executeUserCode(
       userCode,
       [],
@@ -1397,7 +1376,7 @@ describe('regression tests', () => {
         ts.createSourceFile('scheduler-edsl-fluent-api.ts', schedulerEdsl, ts.ScriptTarget.ESNext),
         ts.createSourceFile('mission-model-generated-code.ts', modelSpecific, ts.ScriptTarget.ESNext),
       ],
-      context,
+			{},
     );
 
     expect(result.isErr()).toBeTruthy();
@@ -1428,7 +1407,6 @@ describe('regression tests', () => {
       fs.promises.readFile(new URL('./inputs/mission-model-generated-code.ts', import.meta.url).pathname, 'utf8'),
     ]);
 
-    const context = vm.createContext({});
     const result = await runner.executeUserCode(
       userCode,
       [],
@@ -1440,7 +1418,7 @@ describe('regression tests', () => {
         ts.createSourceFile('scheduler-edsl-fluent-api.ts', schedulerEdsl, ts.ScriptTarget.ESNext),
         ts.createSourceFile('mission-model-generated-code.ts', modelSpecific, ts.ScriptTarget.ESNext),
       ],
-      context,
+			{}
     );
 
     expect(result.isErr()).toBeTruthy();
@@ -1471,9 +1449,6 @@ describe('regression tests', () => {
       fs.promises.readFile(new URL('./inputs/TemporalPolyfillTypes.ts', import.meta.url).pathname, 'utf8'),
     ]);
 
-    const context = vm.createContext({
-      Temporal,
-    });
     const result = await runner.executeUserCode(
       userCode,
       [{ activity: null }],
@@ -1485,7 +1460,7 @@ describe('regression tests', () => {
         ts.createSourceFile('activity-types.ts', activityTypes, ts.ScriptTarget.ESNext, true),
         ts.createSourceFile('TemporalPolyfillTypes.ts', temporalPolyfill, ts.ScriptTarget.ESNext, true),
       ],
-      context,
+			{},
     );
 
     expect(result.isErr()).toBeTruthy();
@@ -1548,7 +1523,6 @@ describe('regression tests', () => {
       fs.promises.readFile(new URL('./inputs/mission-model-generated-code.ts', import.meta.url).pathname, 'utf8'),
     ]);
 
-    const context = vm.createContext({});
     const result = await runner.executeUserCode(
       userCode,
       [],
@@ -1560,7 +1534,7 @@ describe('regression tests', () => {
         ts.createSourceFile('scheduler-edsl-fluent-api.ts', schedulerEdsl, ts.ScriptTarget.ESNext),
         ts.createSourceFile('mission-model-generated-code.ts', modelSpecific, ts.ScriptTarget.ESNext),
       ],
-      context,
+			{},
     );
 
     expect(result.isErr()).toBeTruthy();
@@ -1641,9 +1615,7 @@ describe('regression tests', () => {
         ts.createSourceFile('command-types.ts', commandTypes, ts.ScriptTarget.ESNext),
         ts.createSourceFile('TemporalPolyfillTypes.ts', temporalPolyfill, ts.ScriptTarget.ESNext),
       ],
-      vm.createContext({
-        Temporal,
-      }),
+			{ globals: { Temporal } },
     );
 
     expect(result.isErr()).toBeTruthy();

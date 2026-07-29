@@ -100,8 +100,16 @@ export class UserCodeRunner {
 			ts.ScriptKind.TS,
 		);
 
+		// optional result serializer passed by the user
+		// if passed, will be run on all results of user code before returning to transform them to safe values
 		const serializer = options.resultSerializer;
 		const serializerModuleName = serializer === undefined ? undefined : removeExt(serializer.moduleName);
+		if (
+			serializerModuleName !== undefined &&
+			!additionalSourceFiles.some(file => removeExt(file.fileName) === serializerModuleName)
+		) {
+			throw new Error(`Result serializer module not found: ${serializerModuleName}`);
+		}
 
 		const serializerImport =
 			serializerModuleName === undefined
@@ -253,7 +261,32 @@ export class UserCodeRunner {
 		});
 	}
 
-	public async executeUserCode<ArgsType extends any[], ReturnType = any>(
+	public async executeUserCode<ArgsType extends unknown[], OutputType>(
+		userCode: string,
+		args: ArgsType,
+		outputType = 'any',
+		argsTypes: string[] = ['any'],
+		timeout = 5000,
+		additionalSourceFiles: ts.SourceFile[] = [],
+		options: UserCodeExecutionOptions = {},
+	): Promise<Result<OutputType, UserCodeError[]>> {
+		const result = await this.preProcess(userCode, outputType, argsTypes, additionalSourceFiles, {
+			resultSerializer: options.resultSerializer,
+		});
+
+		if (result.isErr()) {
+			return result;
+		}
+
+		const { jsFileMap, userCodeSourceMap } = result.unwrap();
+
+		return this.executeUserCodeFromArtifacts<ArgsType, OutputType>(jsFileMap, userCodeSourceMap, args, timeout, {
+			globals: options.globals,
+			memoryLimitMb: options.memoryLimitMb,
+		});
+	}
+
+	public async executeUserCodeOld<ArgsType extends any[], ReturnType = any>(
 		userCode: string,
 		args: ArgsType,
 		outputType: string = 'any',
@@ -274,6 +307,76 @@ export class UserCodeRunner {
 	}
 
 	public async executeUserCodeFromArtifacts<ArgsType extends unknown[], OutputType>(
+		jsFileMap: Record<string, string>,
+		sourceMap: string,
+		args: ArgsType,
+		timeout = 5000,
+		options: ArtifactExecutionOptions = {},
+	): Promise<Result<OutputType, UserCodeError[]>> {
+		const isolate = new ivm.Isolate({
+			memoryLimit: options.memoryLimitMb ?? 1024,
+		});
+
+		try {
+			const context = isolate.createContextSync();
+			const global = context.global;
+
+			// copy host values into the guest isolate so objects are guest-owned clones,
+			// not live host objects whose prototypes or constructors could expose host capabilities.
+			global.setSync('__args', args, { copy: true });
+			global.setSync('__result', undefined);
+			// global.setSync('__finalResult', undefined);
+
+			for (const [name, value] of Object.entries(options.globals ?? {})) {
+				if (name === '__args' || name === '__result' || name === '__finalResult') {
+					throw new Error(`Reserved global name: ${name}`);
+				}
+
+				global.setSync(name, value, { copy: true });
+			}
+
+			// Create modules for VM
+			const moduleCache = new Map<string, ivm.Module>();
+			for (const [fileName, content] of Object.entries(jsFileMap)) {
+				moduleCache.set(
+					fileName,
+					isolate.compileModuleSync(content, {
+						filename: fileName,
+					}),
+				);
+			}
+
+			// the harness module imports and invokes the user module,
+			// keeping execution and result capture inside the isolated context.
+			const harnessModule = moduleCache.get(EXECUTION_HARNESS_FILENAME);
+			if (harnessModule === undefined) {
+				throw new Error('Execution harness module is missing');
+			}
+
+			// recursively resolve & link the harness module’s imports
+			harnessModule.instantiateSync(context, specifier => {
+				// module names currently use a flat namespace; directory paths and extensions are discarded.
+				const module = moduleCache.get(removeExt(specifier));
+				if (module === undefined) {
+					throw new Error(`Unable to resolve dependency: ${specifier}`);
+				}
+				return module;
+			});
+
+			// evaluate the resolved module
+			await harnessModule.evaluate({ timeout });
+			// copy guest results out as host-owned data; don't expose live guest reference.
+			const value = await global.get('__finalResult', { copy: true });
+
+			return Result.Ok(value as OutputType);
+		} catch (error) {
+			return Result.Err([UserCodeRuntimeError.new(error as Error, await new SourceMapConsumer(sourceMap))]);
+		} finally {
+			isolate.dispose();
+		}
+	}
+
+	public async executeUserCodeFromArtifactsOld<ArgsType extends unknown[], OutputType>(
 		jsFileMap: Record<string, string>,
 		sourceMap: string,
 		args: ArgsType,
