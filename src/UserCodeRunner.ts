@@ -22,8 +22,44 @@ export interface CacheItem {
 	userCodeSourceMap: string;
 }
 
+// instance options provided by the user when constructing the UserCodeRunner
 export interface UserCodeRunnerOptions {
 	typeErrorCodeMessageMappers?: { [errorCode: number]: (message: string) => string | undefined }; // The error code to message mappers
+}
+
+// optional execution-specific options that can be provided when code is executed
+export interface ResultSerializerOptions {
+	/**
+	 * Name of an additional source module whose default export converts the
+	 * user's raw result into transferable data that can safely leave the isolate.
+	 */
+	moduleName: string;
+
+	/**
+	 * TypeScript type returned by the serializer.
+	 */
+	outputType?: string;
+}
+export interface UserCodeExecutionOptions {
+	/**
+	 * Plain data copied into the guest isolate.
+	 */
+	globals?: UserCodeGlobals;
+
+	/**
+	 * Maximum guest-isolate heap size in MB.
+	 */
+	memoryLimitMb?: number;
+
+	/**
+	 * Trusted guest-side serializer included in additionalSourceFiles.
+	 */
+	resultSerializer?: ResultSerializerOptions;
+}
+
+export interface ArtifactExecutionOptions {
+	globals?: UserCodeGlobals;
+	memoryLimitMb?: number;
 }
 
 export class UserCodeRunner {
@@ -35,13 +71,27 @@ export class UserCodeRunner {
 		);
 	}
 
+	/**
+	 * Pre-process user code into executable Javascript artifacts by:
+	 * - generating a top level Typescript harness which imports the main user code and additional source files
+	 * - type-checking and transpiling the module graph
+	 * - producing source files and source maps for runtime error mapping
+	 * The harness invokes the user module and optionally serializes its result inside the guest environment.
+	 *
+	 * @param userCode TypeScript source containing the user module's default export.
+	 * @param outputType Expected TypeScript return type of the user function.
+	 * @param argsTypes TypeScript types corresponding to the user function arguments.
+	 * @param additionalSourceFiles Additional virtual TypeScript modules available to the harness and user code.
+	 * @param options Optional preprocessing behavior, including guest-side result serialization.
+	 * @returns The transpiled module map and user-code source map, or preprocessing errors.
+	 */
 	public async preProcess(
 		userCode: string,
 		outputType: string = 'any',
 		argsTypes: string[] = ['any'],
 		additionalSourceFiles: ts.SourceFile[] = [],
+		options: Pick<UserCodeExecutionOptions, 'resultSerializer'> = {},
 	): Promise<Result<CacheItem, UserCodeError[]>> {
-		// TypeCheck and transpile code
 		const userSourceFile = ts.createSourceFile(
 			USER_CODE_FILENAME,
 			userCode,
@@ -50,26 +100,43 @@ export class UserCodeRunner {
 			ts.ScriptKind.TS,
 		);
 
+		const serializer = options.resultSerializer;
+		const serializerModuleName = serializer === undefined ? undefined : removeExt(serializer.moduleName);
+
+		const serializerImport =
+			serializerModuleName === undefined
+				? ''
+				: `import __serializeResult from ${JSON.stringify(serializerModuleName)};`;
+
+		const finalOutputType = serializer?.outputType ?? outputType;
+
 		const executionCode = `
 			${additionalSourceFiles
 				.map(file => {
 					if (file.fileName.endsWith('.d.ts')) return '';
-					const filenameSansExt = removeExt(file.fileName);
-					return `import '${filenameSansExt}';`;
+					return `import ${JSON.stringify(removeExt(file.fileName))};`;
 				})
-				.join('\n  ')}
-      import defaultExport from '${USER_CODE_FILENAME}';
-            
-      declare global {
-        const __args: [${argsTypes.join(', ')}];
-        let __result: ${outputType} | Promise<${outputType}>;
-      }
-      __result = defaultExport(...__args);
-      
-      if ((__result as any) instanceof Promise) {
-      	__result = await __result;
-      }
-    `;
+				.join('\n')}
+		
+			${serializerImport}
+		
+			import defaultExport from ${JSON.stringify(USER_CODE_FILENAME)};
+			
+			declare global {
+				const __args: [${argsTypes.join(', ')}];
+				let __result: ${outputType} | Promise<${outputType}>;
+			}
+			let __finalResult: ${finalOutputType};
+			
+			__result = defaultExport(...__args);
+			if ((__result as any) instanceof Promise) {
+				__result = await __result;
+			}
+			const __resolvedResult: ${outputType} = await __result;
+			
+			__finalResult = ${serializer === undefined ? '__resolvedResult' : 'await __serializeResult(__resolvedResult)'};
+			(globalThis as any).__finalResult = __finalResult;
+		`;
 
 		const executionSourceFile = ts.createSourceFile(
 			EXECUTION_HARNESS_FILENAME,
@@ -193,7 +260,7 @@ export class UserCodeRunner {
 		argsTypes: string[] = ['any'],
 		timeout: number = 5000,
 		additionalSourceFiles: ts.SourceFile[] = [],
-		globals: UserCodeGlobals = {}
+		globals: UserCodeGlobals = {},
 	): Promise<Result<ReturnType, UserCodeError[]>> {
 		const result = await this.preProcess(userCode, outputType, argsTypes, additionalSourceFiles);
 
@@ -222,7 +289,7 @@ export class UserCodeRunner {
 			const context = isolate.createContextSync();
 			const global = context.global;
 
-			// put args and result into context
+			// put args & result into context
 			// any objects from host must be set with {copy: true}, this creates guest-owned deep clones of originals,
 			// not live host objects whose prototypes or constructors could expose host capabilities.
 			global.setSync('__args', args, { copy: true });
@@ -267,7 +334,7 @@ export class UserCodeRunner {
 			// evaluate the resolved module
 			await harnessModule.evaluate({ timeout });
 			// copy guest results out as host-owned data; don't expose live guest reference.
-			const value = await global.get('__result', { copy: true });
+			const value = await global.get('__finalResult', { copy: true });
 
 			return Result.Ok(value as OutputType);
 		} catch (error) {
