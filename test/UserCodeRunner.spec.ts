@@ -480,9 +480,49 @@ describe('behavior', () => {
 			}
     );
 
-    // expect(result.isOk()).toBeTruthy();
     expect(result.unwrap()).toBe('hello hello world other');
   });
+
+	it('should serialize the result before copying it out, if serializer is provided', async () => {
+		const serializer = ts.createSourceFile(
+			'result-serializer.ts',
+			`
+      export default function serializeResult(
+        result: { greet(name: string): string },
+      ): string {
+        return result.greet('world');
+      }
+    `,
+			ts.ScriptTarget.ESNext,
+			undefined,
+			ts.ScriptKind.TS,
+		);
+
+		const result = await new UserCodeRunner().executeUserCode<[], string>(
+			`
+      export default function() {
+        return {
+          greet(name: string): string {
+            return 'hello ' + name;
+          },
+        };
+      }
+    `,
+			[],
+			'{ greet(name: string): string }',
+			[],
+			1000,
+			[serializer],
+			{
+				resultSerializer: {
+					moduleName: 'result-serializer',
+					outputType: 'string',
+				},
+			},
+		);
+
+		expect(result.unwrap()).toBe('hello world');
+	});
 
   it('should handle unnamed arrow function default exports', async () => {
     const userCode = `

@@ -154,16 +154,32 @@ export class UserCodeRunner {
 			ts.ScriptKind.TS,
 		);
 
-		const tsFileMap = new Map<string, ts.SourceFile>();
+		// Precompiled JavaScript bundles are runtime-only guest modules.
+		// They must bypass TypeScript compilation to avoid re-emission conflicts.
+		const runtimeJavascriptFiles = additionalSourceFiles.filter(file => /\.(?:c|m)?js$/.test(file.fileName));
 
-		tsFileMap.set(USER_CODE_FILENAME, userSourceFile);
-		tsFileMap.set(EXECUTION_HARNESS_FILENAME, executionSourceFile);
+		// TypeScript and declaration files remain in the virtual compiler program for
+		// type checking, transpilation, diagnostics, and source-map generation.
+		const typescriptSourceFiles = additionalSourceFiles.filter(file => !/\.(?:c|m)?js$/.test(file.fileName));
 
-		for (const additionalSourceFile of additionalSourceFiles) {
-			tsFileMap.set(removeExt(additionalSourceFile.fileName), additionalSourceFile);
+		const tsFileMap = new Map<string, ts.SourceFile>([
+			[USER_CODE_FILENAME, userSourceFile],
+			[EXECUTION_HARNESS_FILENAME, executionSourceFile],
+		]);
+		for (const typescriptSourceFile of typescriptSourceFiles) {
+			tsFileMap.set(removeExt(typescriptSourceFile.fileName), typescriptSourceFile);
 		}
 
-		const jsFileMap = {} as { [key: string]: string };
+		// Seed the runtime module map with precompiled JS guest bundles unchanged.
+		const jsFileMap: Record<string, string> = {};
+		for (const file of runtimeJavascriptFiles) {
+			const moduleName = removeExt(file.fileName);
+			if (jsFileMap[moduleName] !== undefined) {
+				throw new Error(`Duplicate runtime module: ${moduleName}`);
+			}
+			jsFileMap[moduleName] = file.text;
+		}
+
 		let userCodeSourceMap: string;
 
 		const defaultCompilerHost = ts.createCompilerHost({});
@@ -187,15 +203,14 @@ export class UserCodeRunner {
 					if (removeExt(filenameSansExt) === USER_CODE_FILENAME) {
 						userCodeSourceMap = ts.createSourceFile(removeExt(filenameSansExt), data, ts.ScriptTarget.ESNext).text;
 					}
-				} else {
-					jsFileMap[filenameSansExt] = ts.createSourceFile(
-						filenameSansExt,
-						data,
-						ts.ScriptTarget.ESNext,
-						undefined,
-						ts.ScriptKind.JS,
-					).text;
+					return;
 				}
+				// Prevent emitted TypeScript from silently replacing a supplied runtime bundle.
+				if (jsFileMap[filenameSansExt] !== undefined) {
+					throw new Error(`Duplicate emitted module: ${filenameSansExt}`);
+				}
+				// Add transpiled (now JS) modules to the same map as the untouched precompiled JS bundles.
+				jsFileMap[filenameSansExt] = data;
 			},
 			readFile(fileName: string): string | undefined {
 				const filenameSansExt = removeExt(fileName);
@@ -211,12 +226,18 @@ export class UserCodeRunner {
 		};
 
 		const program = ts.createProgram(
-			[...additionalSourceFiles.map(f => f.fileName), EXECUTION_HARNESS_FILENAME],
+			[...typescriptSourceFiles.map(f => f.fileName), EXECUTION_HARNESS_FILENAME],
 			{
 				target: ts.ScriptTarget.ESNext,
 				module: ts.ModuleKind.ES2022,
 				lib: ['lib.esnext.d.ts'],
 				sourceMap: true,
+				// allow TS files OR pre-bundled JS files
+				allowJs: true,
+				checkJs: true,
+				// prevent pre-bundled JavaScript inputs from overwriting themselves
+				// The custom compiler host captures these virtual output paths in memory.
+				outDir: '__generated__',
 			},
 			customCompilerHost,
 		);
@@ -286,26 +307,6 @@ export class UserCodeRunner {
 		});
 	}
 
-	public async executeUserCodeOld<ArgsType extends any[], ReturnType = any>(
-		userCode: string,
-		args: ArgsType,
-		outputType: string = 'any',
-		argsTypes: string[] = ['any'],
-		timeout: number = 5000,
-		additionalSourceFiles: ts.SourceFile[] = [],
-		globals: UserCodeGlobals = {},
-	): Promise<Result<ReturnType, UserCodeError[]>> {
-		const result = await this.preProcess(userCode, outputType, argsTypes, additionalSourceFiles);
-
-		if (result.isErr()) {
-			return result;
-		}
-
-		const { jsFileMap, userCodeSourceMap } = result.unwrap();
-
-		return this.executeUserCodeFromArtifacts(jsFileMap, userCodeSourceMap, args, timeout, globals);
-	}
-
 	public async executeUserCodeFromArtifacts<ArgsType extends unknown[], OutputType>(
 		jsFileMap: Record<string, string>,
 		sourceMap: string,
@@ -357,77 +358,6 @@ export class UserCodeRunner {
 			harnessModule.instantiateSync(context, specifier => {
 				// module names currently use a flat namespace; directory paths and extensions are discarded.
 				const module = moduleCache.get(removeExt(specifier));
-				if (module === undefined) {
-					throw new Error(`Unable to resolve dependency: ${specifier}`);
-				}
-				return module;
-			});
-
-			// evaluate the resolved module
-			await harnessModule.evaluate({ timeout });
-			// copy guest results out as host-owned data; don't expose live guest reference.
-			const value = await global.get('__finalResult', { copy: true });
-
-			return Result.Ok(value as OutputType);
-		} catch (error) {
-			return Result.Err([UserCodeRuntimeError.new(error as Error, await new SourceMapConsumer(sourceMap))]);
-		} finally {
-			isolate.dispose();
-		}
-	}
-
-	public async executeUserCodeFromArtifactsOld<ArgsType extends unknown[], OutputType>(
-		jsFileMap: Record<string, string>,
-		sourceMap: string,
-		args: ArgsType,
-		timeout = 5000,
-		globals: UserCodeGlobals = {},
-	): Promise<Result<OutputType, UserCodeError[]>> {
-		// create an isolated VM + context
-		const isolate = new ivm.Isolate({
-			memoryLimit: 128,
-		});
-
-		try {
-			const context = isolate.createContextSync();
-			const global = context.global;
-
-			// put args & result into context
-			// any objects from host must be set with {copy: true}, this creates guest-owned deep clones of originals,
-			// not live host objects whose prototypes or constructors could expose host capabilities.
-			global.setSync('__args', args, { copy: true });
-			global.setSync('__result', undefined);
-
-			// put user-provided globals into context
-			for (const [name, value] of Object.entries(globals)) {
-				if (name === '__args' || name === '__result') {
-					throw new Error(`Reserved global name: ${name}`);
-				}
-				global.setSync(name, value, { copy: true });
-			}
-
-			// Create modules for VM
-			const moduleCache = new Map<string, ivm.Module>();
-			for (const [fileName, content] of Object.entries(jsFileMap)) {
-				moduleCache.set(
-					fileName,
-					isolate.compileModuleSync(content, {
-						filename: fileName,
-					}),
-				);
-			}
-
-			// the harness module imports and invokes the user module,
-			// keeping execution and result capture inside the isolated context.
-			const harnessModule = moduleCache.get(EXECUTION_HARNESS_FILENAME);
-			if (harnessModule === undefined) {
-				throw new Error('Execution harness module is missing');
-			}
-			// recursively resolve & link the harness module’s imports
-			harnessModule.instantiateSync(context, specifier => {
-				// module names currently use a flat namespace; directory paths and extensions are discarded.
-				const filenameSansExt = removeExt(specifier);
-				const module = moduleCache.get(filenameSansExt);
 				if (module === undefined) {
 					throw new Error(`Unable to resolve dependency: ${specifier}`);
 				}
