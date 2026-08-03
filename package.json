@@ -10,7 +10,8 @@
     "clean": "rm -rf build && rm -rf docs",
     "doc": "typedoc",
     "prepare": "npm run build && npm run doc",
-    "test": "node --experimental-vm-modules --test --loader tsx `glob 'test/**/*.spec.ts'`",
+    "test": "node --no-node-snapshot --test --loader tsx `glob 'test/**/*.spec.ts'`",
+    "test:ci": "node --no-node-snapshot --test --loader tsx --test-reporter=spec --test-reporter=spec --test-reporter-destination=stdout --test-reporter-destination=test-output.txt `glob 'test/**/*.spec.ts'`",
     "watch": "tsc -p tsconfig.json --watch"
   },
   "engines": {
