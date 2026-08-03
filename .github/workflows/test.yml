@@ -40,12 +40,7 @@ jobs:
         id: test
         env:
           NO_COLOR: 1
-        run: >-
-          npm test --
-          --test-reporter=spec
-          --test-reporter=spec
-          --test-reporter-destination=stdout
-          --test-reporter-destination=test-output.txt
+        run: npm test:ci
 
       - name: Add Test Summary
         if: always()
