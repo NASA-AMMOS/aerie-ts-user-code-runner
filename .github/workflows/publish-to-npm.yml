@@ -57,5 +57,4 @@ jobs:
         env:
           # git tags like `v1.0.0-rc.0` will be tagged as `next` version in NPM instead of `latest`
           NPM_DIST_TAG: ${{ contains(github.ref_name, '-') && 'next' || 'latest' }}
-          run: npm publish --tag "$NPM_DIST_TAG"
-        run: npm publish
+        run: npm publish --tag "$NPM_DIST_TAG"
