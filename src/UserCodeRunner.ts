@@ -1,5 +1,5 @@
 import ivm from 'isolated-vm';
-import path from 'path';
+import path from 'node:path';
 import { defaultErrorCodeMessageMappers } from './defaultErrorCodeMessageMappers.js';
 import { createMapDiagnosticMessage } from './utils/errorMessageMapping.js';
 import ts from 'typescript';
@@ -156,11 +156,12 @@ export class UserCodeRunner {
 
 		// Precompiled JavaScript bundles are runtime-only guest modules.
 		// They must bypass TypeScript compilation to avoid re-emission conflicts.
-		const runtimeJavascriptFiles = additionalSourceFiles.filter(file => /\.(?:c|m)?js$/.test(file.fileName));
+		const isJavaScriptFile = (fileName: string): boolean => /\.[cm]?js$/.test(fileName);
+		const runtimeJavascriptFiles = additionalSourceFiles.filter(file => isJavaScriptFile(file.fileName));
 
 		// TypeScript and declaration files remain in the virtual compiler program for
 		// type checking, transpilation, diagnostics, and source-map generation.
-		const typescriptSourceFiles = additionalSourceFiles.filter(file => !/\.(?:c|m)?js$/.test(file.fileName));
+		const typescriptSourceFiles = additionalSourceFiles.filter(file => !isJavaScriptFile(file.fileName));
 
 		const tsFileMap = new Map<string, ts.SourceFile>([
 			[USER_CODE_FILENAME, userSourceFile],
