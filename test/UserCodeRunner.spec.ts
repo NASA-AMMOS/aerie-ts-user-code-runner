@@ -444,95 +444,142 @@ describe('behavior', () => {
     expect(result.unwrap()).toBe('hello world');
   });
 
-  it('should accept additional source files', async () => {
-    const userCode = `
-    import { importedFunction } from 'other-importable';
+	it('should accept additional source files, and allow user code to import and invoke them', async () => {
+		const userCode = `
+			import { importedFunction } from 'other-importable';
+			export default function myDSLFunction(thing: string): string {
+				return importedFunction(thing + ' world');
+			}
+		`.trimTemplate();
+
+		const runner = new UserCodeRunner();
+
+		const result = await runner.executeUserCode(userCode, ['hello'], 'string', ['string'], 1000, [
+			ts.createSourceFile(
+				'other-importable.ts',
+				`
+          export function importedFunction(thing: string): string {
+            return thing + ' other';
+          }
+        `.trimTemplate(),
+				ts.ScriptTarget.ESNext,
+				true,
+			),
+		]);
+
+		expect(result.unwrap()).toBe('hello world other');
+	});
+
+	it('should reject function globals, since they are non-cloneable and cannot be safely passed in', async () => {
+		const userCode = `
     export default function myDSLFunction(thing: string): string {
-      return someGlobalFunction(thing) + importedFunction(' world');
+      return someGlobalFunction(thing);
     }
-    `.trimTemplate();
+  `.trimTemplate();
 
-    const runner = new UserCodeRunner();
+		const runner = new UserCodeRunner();
 
-    const result = await runner.executeUserCode(
-      userCode,
-      ['hello'],
-      'string',
-      ['string'],
-      1000,
-      [
-        ts.createSourceFile('globals.d.ts', `
-      declare global {
-        function someGlobalFunction(thing: string): string;
+		const resultPromise = runner.executeUserCode(
+			userCode,
+			['hello'],
+			'string',
+			['string'],
+			1000,
+			[
+				ts.createSourceFile(
+					'globals.d.ts',
+					`
+          declare global {
+            function someGlobalFunction(thing: string): string;
+          }
+          export {};
+        `.trimTemplate(),
+					ts.ScriptTarget.ESNext,
+					true,
+				),
+			],
+			{
+				globals: {
+					someGlobalFunction: (thing: string) => `hello ${thing}`,
+				},
+			},
+		);
+
+		await expect(resultPromise).rejects.toThrow(
+			/Runtime error detected outside of user code execution path[\s\S]*could not be cloned/,
+		);
+	});
+
+	it('should serialize the result before copying it out, if serializer is provided', async () => {
+		const serializer = ts.createSourceFile(
+			'result-serializer.ts',
+			`
+      export default function serializeResult(
+        result: { greet(name: string): string },
+      ): string {
+        return result.greet('world');
       }
-      export {};
-      `.trimTemplate(), ts.ScriptTarget.ESNext, true),
-        ts.createSourceFile('other-importable.ts', `
-      export function importedFunction(thing: string): string {
-        return thing + ' other';
+    `,
+			ts.ScriptTarget.ESNext,
+			undefined,
+			ts.ScriptKind.TS,
+		);
+
+		const result = await new UserCodeRunner().executeUserCode<[], string>(
+			`
+      export default function() {
+        return {
+          greet(name: string): string {
+            return 'hello ' + name;
+          },
+        };
       }
-      `.trimTemplate(), ts.ScriptTarget.ESNext, true)
-      ],
-      vm.createContext({
-        someGlobalFunction: (thing: string) => 'hello ' + thing, // Implementation injected to global namespace here
-      }),
-    );
+    `,
+			[],
+			'{ greet(name: string): string }',
+			[],
+			1000,
+			[serializer],
+			{
+				resultSerializer: {
+					moduleName: 'result-serializer',
+					outputType: 'string',
+				},
+			},
+		);
 
-    // expect(result.isOk()).toBeTruthy();
-    expect(result.unwrap()).toBe('hello hello world other');
-  });
+		expect(result.unwrap()).toBe('hello world');
+	});
 
-  it('should handle unnamed arrow function default exports', async () => {
-    const userCode = `
-    type ExpansionProps = { activity: ActivityType };
+	it('should handle unnamed arrow function default exports', async () => {
+		const runner = new UserCodeRunner();
 
-    export default (props: ExpansionProps): ExpansionReturn => {
-        const { activity } = props;
-        const { biteSize } = activity.attributes.arguments;
-    
-        return [
-            AVS_DMP_ADC_SNAPSHOT(biteSize)
-        ];
-    }
-    `.trimTemplate()
+		const result = await runner.executeUserCode(
+			`export default (thing: string): string => thing + ' world';`,
+			['hello'],
+			'string',
+			['string'],
+			1000,
+		);
 
-    const runner = new UserCodeRunner();
-    const [commandTypes, activityTypes, temporalPolyfill] = await Promise.all([
-      fs.promises.readFile(new URL('./inputs/command-types.ts', import.meta.url).pathname, 'utf8'),
-      fs.promises.readFile(new URL('./inputs/activity-types.ts', import.meta.url).pathname, 'utf8'),
-      fs.promises.readFile(new URL('./inputs/TemporalPolyfillTypes.ts', import.meta.url).pathname, 'utf8'),
-    ]);
+		expect(result.unwrap()).toBe('hello world');
+	});
 
-    const context = vm.createContext({
-      Temporal,
-    });
-    const result = await runner.executeUserCode(
-      userCode,
-      [{ activity: null}],
-      'Command[] | Command | null',
-      ['{ activity: ActivityType }'],
-      1000,
-      [
-        ts.createSourceFile('command-types.ts', commandTypes, ts.ScriptTarget.ESNext, true),
-        ts.createSourceFile('activity-types.ts', activityTypes, ts.ScriptTarget.ESNext, true),
-        ts.createSourceFile('TemporalPolyfillTypes.ts', temporalPolyfill, ts.ScriptTarget.ESNext, true),
-      ],
-      context,
-    );
+	it('should handle unnamed arrow function default exports assignment', async () => {
+		const runner = new UserCodeRunner();
 
-    expect(result.isErr()).toBeTruthy();
-    expect(result.unwrapErr().length).toBe(3);
-    expect(result.unwrapErr()[0].message).toBe(`
-    TypeError: TS2322 Incorrect return type. Expected: 'Command[] | Command | null | Promise<Command[] | Command | null>', Actual: 'ExpansionReturn'.
-    `.trimTemplate());
-    expect(result.unwrapErr()[0].stack).toBe(`
-    at (3:1)
-    `.trimTemplate())
-    expect(result.unwrapErr()[0].location).toMatchObject({
-      line: 3,
-      column: 1,
-    });
-  });
+		const result = await runner.executeUserCode(`
+				const myDSLFunction = (thing: string): string => thing + ' world';
+				export default myDSLFunction;
+			`.trimTemplate(),
+			['hello'],
+			'string',
+			['string'],
+			1000,
+		);
+
+		expect(result.unwrap()).toBe('hello world');
+	});
 
   it('should handle exported variable that references an arrow function', async () => {
     const userCode = `
@@ -556,9 +603,6 @@ describe('behavior', () => {
       fs.promises.readFile(new URL('./inputs/TemporalPolyfillTypes.ts', import.meta.url).pathname, 'utf8'),
     ]);
 
-    const context = vm.createContext({
-      Temporal,
-    });
     const result = await runner.executeUserCode(
       userCode,
       [{ activity: null}],
@@ -570,7 +614,7 @@ describe('behavior', () => {
         ts.createSourceFile('activity-types.ts', activityTypes, ts.ScriptTarget.ESNext, true),
         ts.createSourceFile('TemporalPolyfillTypes.ts', temporalPolyfill, ts.ScriptTarget.ESNext, true),
       ],
-      context,
+			{ globals: { Temporal } },
     );
 
     expect(result.isErr()).toBeTruthy();
@@ -609,22 +653,19 @@ describe('behavior', () => {
       fs.promises.readFile(new URL('./inputs/TemporalPolyfillTypes.ts', import.meta.url).pathname, 'utf8'),
     ]);
 
-    const context = vm.createContext({
-      Temporal,
-    });
     const result = await runner.executeUserCode(
-      userCode,
-      [{ activity: null}],
-      'Command[] | Command | null',
-      ['{ activity: ActivityType }'],
-      1000,
-      [
-        ts.createSourceFile('command-types.ts', commandTypes, ts.ScriptTarget.ESNext, true),
-        ts.createSourceFile('activity-types.ts', activityTypes, ts.ScriptTarget.ESNext, true),
-        ts.createSourceFile('TemporalPolyfillTypes.ts', temporalPolyfill, ts.ScriptTarget.ESNext, true),
-      ],
-      context,
-    );
+			userCode,
+			[{ activity: null }],
+			'Command[] | Command | null',
+			['{ activity: ActivityType }'],
+			1000,
+			[
+				ts.createSourceFile('command-types.ts', commandTypes, ts.ScriptTarget.ESNext, true),
+				ts.createSourceFile('activity-types.ts', activityTypes, ts.ScriptTarget.ESNext, true),
+				ts.createSourceFile('TemporalPolyfillTypes.ts', temporalPolyfill, ts.ScriptTarget.ESNext, true),
+			],
+			{ globals: { Temporal } },
+		);
 
     expect(result.isErr()).toBeTruthy();
     expect(result.unwrapErr().length).toBe(3);
@@ -638,52 +679,6 @@ describe('behavior', () => {
       line: 11,
       column: 1,
     });
-  });
-
-  it('should handle unnamed arrow function default exports assignment', async () => {
-    const userCode = `
-    type ExpansionProps = { activity: ActivityType };
-
-    const myExpansion = (props: ExpansionProps) => {
-        const { activity } = props;
-        const { primitiveLong } = activity.attributes.arguments;
-    
-        if (true) {
-          return undefined;
-        }
-    
-        return [
-            PREHEAT_OVEN(primitiveLong)
-        ];
-    };
-    export default myExpansion;
-    `.trimTemplate()
-
-    const runner = new UserCodeRunner();
-    const [commandTypes, activityTypes, temporalPolyfill] = await Promise.all([
-      fs.promises.readFile(new URL('./inputs/command-types.ts', import.meta.url).pathname, 'utf8'),
-      fs.promises.readFile(new URL('./inputs/activity-types.ts', import.meta.url).pathname, 'utf8'),
-      fs.promises.readFile(new URL('./inputs/TemporalPolyfillTypes.ts', import.meta.url).pathname, 'utf8'),
-    ]);
-
-    const context = vm.createContext({
-      Temporal,
-    });
-    const result = await runner.executeUserCode(
-      userCode,
-      [{ activity: { attributes: { arguments: { primitiveLong: 1 } } } }],
-      'Command[] | Command | null',
-      ['{ activity: ActivityType }'],
-      1000,
-      [
-        ts.createSourceFile('command-types.ts', commandTypes, ts.ScriptTarget.ESNext, true),
-        ts.createSourceFile('activity-types.ts', activityTypes, ts.ScriptTarget.ESNext, true),
-        ts.createSourceFile('TemporalPolyfillTypes.ts', temporalPolyfill, ts.ScriptTarget.ESNext, true),
-      ],
-      context,
-    );
-
-    expect(result.isOk()).toBeTruthy();
   });
 
   it('should handle throws in user code but outside default function execution path', async () => {
@@ -718,43 +713,40 @@ describe('behavior', () => {
     });
   });
 
-  it('should handle throws in library code outside default function execution path with an explicit error', async () => {
-    const userCode = `
-    export default function MyDSLFunction(thing: string): string {
-      return thing + ' world';
-    }
-    `.trimTemplate();
+	it('should handle throws in library code outside default function execution path with an explicit error', async () => {
+		const userCode = `
+		export default function MyDSLFunction(thing: string): string {
+			return thing + ' world';
+		}
+		`.trimTemplate();
 
-    const runner = new UserCodeRunner();
+		const runner = new UserCodeRunner();
 
-    try {
-      await runner.executeUserCode(
-        userCode,
-        ['hello'],
-        'string',
-        ['string'],
-        1000,
-        [
-          ts.createSourceFile('additionalFile.ts', `
-      export {}
-      throw new Error('This is a test error');
-      `.trimTemplate(), ts.ScriptTarget.ESNext, true),
-        ],
-      );
-    } catch (err: any) {
-      expect(err.message).toBe(`
-      Error: Runtime error detected outside of user code execution path. This is most likely a bug in the additional library source.
-      Inherited from:
-      This is a test error
-      `.trimTemplate());
-      expect(err.stack).toContain(`
-      Error: This is a test error
-          at additionalFile:1:7
-      `.trimTemplate());
-      expect(err.stack).toMatch(/at SourceTextModule.evaluate \(node:internal\/vm\/module:\d+:\d+\)/);
-      expect(err.stack).toMatch(/at UserCodeRunner\.executeUserCodeFromArtifacts \(\S+src\/UserCodeRunner\.ts:\d+:\d+/);
-    }
-  });
+		const resultPromise = runner.executeUserCode(userCode, ['hello'], 'string', ['string'], 1000, [
+			ts.createSourceFile(
+				'additionalFile.ts',
+				`
+          export {};
+          throw new Error('This is a test error');
+        `.trimTemplate(),
+				ts.ScriptTarget.ESNext,
+				true,
+			),
+		]);
+
+		const expectedMessage = `
+Runtime error detected outside of user code execution path. This is most likely a bug in the additional library source.
+Inherited from:
+This is a test error
+		`.trimTemplate();
+		await expect(resultPromise).rejects.toThrow(expectedMessage);
+		await expect(resultPromise).rejects.toHaveProperty(
+			'stack',
+			expect.stringMatching(
+				/Error: Runtime error detected[\s\S]*This is a test error[\s\S]*at additionalFile:\d+:\d+/,
+			),
+		);
+	});
 
   it('should allow preprocessing of user code and subsequent execution', async () => {
     const userCode = `
@@ -1076,22 +1068,36 @@ describe('regression tests', () => {
       fs.promises.readFile(new URL('./inputs/TemporalPolyfillTypes.ts', import.meta.url).pathname, 'utf8'),
     ]);
 
-    const context = vm.createContext({
-      Temporal,
-    });
     const result = await runner.executeUserCode(
-      userCode,
-      [{ activity: null }],
-      'Command[] | Command | null',
-      ['{ activity: ActivityType }'],
-      1000,
-      [
-        ts.createSourceFile('command-types.ts', commandTypes, ts.ScriptTarget.ESNext, true),
-        ts.createSourceFile('activity-types.ts', activityTypes, ts.ScriptTarget.ESNext, true),
-        ts.createSourceFile('TemporalPolyfillTypes.ts', temporalPolyfill, ts.ScriptTarget.ESNext, true),
-      ],
-      context,
-    );
+			userCode,
+			[{ activity: null }],
+			'Command[] | Command | null',
+			['{ activity: ActivityType }'],
+			1000,
+			[
+				ts.createSourceFile('command-types.ts', commandTypes, ts.ScriptTarget.ESNext, true),
+				ts.createSourceFile('activity-types.ts', activityTypes, ts.ScriptTarget.ESNext, true),
+				ts.createSourceFile('TemporalPolyfillTypes.ts', temporalPolyfill, ts.ScriptTarget.ESNext, true),
+				// dependencies like Temporal *must* be passed as sourceFiles, not in context/globals
+				ts.createSourceFile(
+					'temporal-bundle-stub.ts', `
+						class Duration {
+							static from(value: string) {
+								return new Duration();
+							}
+						}
+	
+						Object.defineProperty(globalThis, 'Temporal', {
+							value: { Duration },
+							writable: false,
+							configurable: false,
+						});
+					`.trimTemplate(),
+					ts.ScriptTarget.ESNext,
+					true,
+				),
+			]
+		);
 
     expect(result.unwrap()).toMatchObject({
       stem: 'BAKE_BREAD',
@@ -1122,9 +1128,6 @@ describe('regression tests', () => {
       fs.promises.readFile(new URL('./inputs/TemporalPolyfillTypes.ts', import.meta.url).pathname, 'utf8'),
     ]);
 
-    const context = vm.createContext({
-      Temporal,
-    });
     const result = await runner.executeUserCode(
       userCode,
       [{ activityInstance: null }, {}],
@@ -1136,7 +1139,7 @@ describe('regression tests', () => {
         ts.createSourceFile('activity-types.ts', activityTypes, ts.ScriptTarget.ESNext, true),
         ts.createSourceFile('TemporalPolyfillTypes.ts', temporalPolyfill, ts.ScriptTarget.ESNext, true),
       ],
-      context,
+			{}
     );
 
     expect(result.isErr()).toBeTruthy();
@@ -1207,7 +1210,6 @@ describe('regression tests', () => {
       fs.promises.readFile(new URL('./inputs/mission-model-generated-code.ts', import.meta.url).pathname, 'utf8'),
     ]);
 
-    const context = vm.createContext({});
     const result = await runner.executeUserCode(
       userCode,
       [],
@@ -1219,7 +1221,7 @@ describe('regression tests', () => {
         ts.createSourceFile('scheduler-edsl-fluent-api.ts', schedulerEdsl, ts.ScriptTarget.ESNext),
         ts.createSourceFile('mission-model-generated-code.ts', modelSpecific, ts.ScriptTarget.ESNext),
       ],
-      context,
+			{},
     );
 
     expect(result.unwrap()).toMatchObject({
@@ -1263,7 +1265,6 @@ describe('regression tests', () => {
       fs.promises.readFile(new URL('./inputs/dsl-model-specific--2345.ts', import.meta.url).pathname, 'utf8'),
     ]);
 
-    const context = vm.createContext({});
     const result = await runner.executeUserCode(
       userCode,
       [],
@@ -1275,7 +1276,7 @@ describe('regression tests', () => {
         ts.createSourceFile('scheduler-edsl-fluent-api.ts', schedulerEdsl, ts.ScriptTarget.ESNext),
         ts.createSourceFile('mission-model-generated-code.ts', modelSpecific, ts.ScriptTarget.ESNext),
       ],
-      context,
+			{},
     );
 
     expect(result.isErr()).toBeTruthy();
@@ -1307,20 +1308,19 @@ describe('regression tests', () => {
       fs.promises.readFile(new URL('./inputs/mission-model-generated-code.ts', import.meta.url).pathname, 'utf8'),
     ]);
 
-    const context = vm.createContext({});
     const result = await runner.executeUserCode(
-      userCode,
-      [],
-      'Goal',
-      [],
-      undefined,
-      [
-        ts.createSourceFile('scheduler-ast.ts', schedulerAst, ts.ScriptTarget.ESNext),
-        ts.createSourceFile('scheduler-edsl-fluent-api.ts', schedulerEdsl, ts.ScriptTarget.ESNext),
-        ts.createSourceFile('mission-model-generated-code.ts', modelSpecific, ts.ScriptTarget.ESNext),
-      ],
-      context,
-    );
+			userCode,
+			[],
+			'Goal',
+			[],
+			undefined,
+			[
+				ts.createSourceFile('scheduler-ast.ts', schedulerAst, ts.ScriptTarget.ESNext),
+				ts.createSourceFile('scheduler-edsl-fluent-api.ts', schedulerEdsl, ts.ScriptTarget.ESNext),
+				ts.createSourceFile('mission-model-generated-code.ts', modelSpecific, ts.ScriptTarget.ESNext),
+			],
+			{},
+		);
 
     expect(result.isErr()).toBeTruthy();
     expect(result.unwrapErr().length).toBe(1);
@@ -1350,7 +1350,6 @@ describe('regression tests', () => {
       fs.promises.readFile(new URL('./inputs/mission-model-generated-code.ts', import.meta.url).pathname, 'utf8'),
     ]);
 
-    const context = vm.createContext({});
     const result = await runner.executeUserCode(
       userCode,
       [],
@@ -1362,7 +1361,7 @@ describe('regression tests', () => {
         ts.createSourceFile('scheduler-edsl-fluent-api.ts', schedulerEdsl, ts.ScriptTarget.ESNext),
         ts.createSourceFile('mission-model-generated-code.ts', modelSpecific, ts.ScriptTarget.ESNext),
       ],
-      context,
+			{}
     );
 
     expect(result.isOk()).toBeTruthy();
@@ -1385,7 +1384,6 @@ describe('regression tests', () => {
       fs.promises.readFile(new URL('./inputs/mission-model-generated-code.ts', import.meta.url).pathname, 'utf8'),
     ]);
 
-    const context = vm.createContext({});
     const result = await runner.executeUserCode(
       userCode,
       [],
@@ -1397,7 +1395,7 @@ describe('regression tests', () => {
         ts.createSourceFile('scheduler-edsl-fluent-api.ts', schedulerEdsl, ts.ScriptTarget.ESNext),
         ts.createSourceFile('mission-model-generated-code.ts', modelSpecific, ts.ScriptTarget.ESNext),
       ],
-      context,
+			{},
     );
 
     expect(result.isErr()).toBeTruthy();
@@ -1428,7 +1426,6 @@ describe('regression tests', () => {
       fs.promises.readFile(new URL('./inputs/mission-model-generated-code.ts', import.meta.url).pathname, 'utf8'),
     ]);
 
-    const context = vm.createContext({});
     const result = await runner.executeUserCode(
       userCode,
       [],
@@ -1440,7 +1437,7 @@ describe('regression tests', () => {
         ts.createSourceFile('scheduler-edsl-fluent-api.ts', schedulerEdsl, ts.ScriptTarget.ESNext),
         ts.createSourceFile('mission-model-generated-code.ts', modelSpecific, ts.ScriptTarget.ESNext),
       ],
-      context,
+			{}
     );
 
     expect(result.isErr()).toBeTruthy();
@@ -1471,9 +1468,6 @@ describe('regression tests', () => {
       fs.promises.readFile(new URL('./inputs/TemporalPolyfillTypes.ts', import.meta.url).pathname, 'utf8'),
     ]);
 
-    const context = vm.createContext({
-      Temporal,
-    });
     const result = await runner.executeUserCode(
       userCode,
       [{ activity: null }],
@@ -1485,7 +1479,7 @@ describe('regression tests', () => {
         ts.createSourceFile('activity-types.ts', activityTypes, ts.ScriptTarget.ESNext, true),
         ts.createSourceFile('TemporalPolyfillTypes.ts', temporalPolyfill, ts.ScriptTarget.ESNext, true),
       ],
-      context,
+			{},
     );
 
     expect(result.isErr()).toBeTruthy();
@@ -1548,7 +1542,6 @@ describe('regression tests', () => {
       fs.promises.readFile(new URL('./inputs/mission-model-generated-code.ts', import.meta.url).pathname, 'utf8'),
     ]);
 
-    const context = vm.createContext({});
     const result = await runner.executeUserCode(
       userCode,
       [],
@@ -1560,7 +1553,7 @@ describe('regression tests', () => {
         ts.createSourceFile('scheduler-edsl-fluent-api.ts', schedulerEdsl, ts.ScriptTarget.ESNext),
         ts.createSourceFile('mission-model-generated-code.ts', modelSpecific, ts.ScriptTarget.ESNext),
       ],
-      context,
+			{},
     );
 
     expect(result.isErr()).toBeTruthy();
@@ -1641,9 +1634,7 @@ describe('regression tests', () => {
         ts.createSourceFile('command-types.ts', commandTypes, ts.ScriptTarget.ESNext),
         ts.createSourceFile('TemporalPolyfillTypes.ts', temporalPolyfill, ts.ScriptTarget.ESNext),
       ],
-      vm.createContext({
-        Temporal,
-      }),
+			{ globals: { Temporal } },
     );
 
     expect(result.isErr()).toBeTruthy();

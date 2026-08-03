@@ -1,5 +1,5 @@
-import vm from 'vm';
-import path from 'path';
+import ivm from 'isolated-vm';
+import path from 'node:path';
 import { defaultErrorCodeMessageMappers } from './defaultErrorCodeMessageMappers.js';
 import { createMapDiagnosticMessage } from './utils/errorMessageMapping.js';
 import ts from 'typescript';
@@ -15,13 +15,51 @@ export { defaultErrorCodeMessageMappers } from './defaultErrorCodeMessageMappers
 const EXECUTION_HARNESS_FILENAME = '__execution_harness';
 const USER_CODE_FILENAME = '__user_file';
 
+export type UserCodeGlobals = Record<string, unknown>;
+
 export interface CacheItem {
 	jsFileMap: { [key: string]: string };
 	userCodeSourceMap: string;
 }
 
+// instance options provided by the user when constructing the UserCodeRunner
 export interface UserCodeRunnerOptions {
 	typeErrorCodeMessageMappers?: { [errorCode: number]: (message: string) => string | undefined }; // The error code to message mappers
+}
+
+// optional execution-specific options that can be provided when code is executed
+export interface ResultSerializerOptions {
+	/**
+	 * Name of an additional source module whose default export converts the
+	 * user's raw result into transferable data that can safely leave the isolate.
+	 */
+	moduleName: string;
+
+	/**
+	 * TypeScript type returned by the serializer.
+	 */
+	outputType?: string;
+}
+export interface UserCodeExecutionOptions {
+	/**
+	 * Plain data copied into the guest isolate.
+	 */
+	globals?: UserCodeGlobals;
+
+	/**
+	 * Maximum guest-isolate heap size in MB.
+	 */
+	memoryLimitMb?: number;
+
+	/**
+	 * Trusted guest-side serializer included in additionalSourceFiles.
+	 */
+	resultSerializer?: ResultSerializerOptions;
+}
+
+export interface ArtifactExecutionOptions {
+	globals?: UserCodeGlobals;
+	memoryLimitMb?: number;
 }
 
 export class UserCodeRunner {
@@ -33,13 +71,27 @@ export class UserCodeRunner {
 		);
 	}
 
+	/**
+	 * Pre-process user code into executable Javascript artifacts by:
+	 * - generating a top level Typescript harness which imports the main user code and additional source files
+	 * - type-checking and transpiling the module graph
+	 * - producing source files and source maps for runtime error mapping
+	 * The harness invokes the user module and optionally serializes its result inside the guest environment.
+	 *
+	 * @param userCode TypeScript source containing the user module's default export.
+	 * @param outputType Expected TypeScript return type of the user function.
+	 * @param argsTypes TypeScript types corresponding to the user function arguments.
+	 * @param additionalSourceFiles Additional virtual TypeScript modules available to the harness and user code.
+	 * @param options Optional preprocessing behavior, including guest-side result serialization.
+	 * @returns The transpiled module map and user-code source map, or preprocessing errors.
+	 */
 	public async preProcess(
 		userCode: string,
 		outputType: string = 'any',
 		argsTypes: string[] = ['any'],
 		additionalSourceFiles: ts.SourceFile[] = [],
+		options: Pick<UserCodeExecutionOptions, 'resultSerializer'> = {},
 	): Promise<Result<CacheItem, UserCodeError[]>> {
-		// TypeCheck and transpile code
 		const userSourceFile = ts.createSourceFile(
 			USER_CODE_FILENAME,
 			userCode,
@@ -48,26 +100,51 @@ export class UserCodeRunner {
 			ts.ScriptKind.TS,
 		);
 
+		// optional result serializer passed by the user
+		// if passed, will be run on all results of user code before returning to transform them to safe values
+		const serializer = options.resultSerializer;
+		const serializerModuleName = serializer === undefined ? undefined : removeExt(serializer.moduleName);
+		if (
+			serializerModuleName !== undefined &&
+			!additionalSourceFiles.some(file => removeExt(file.fileName) === serializerModuleName)
+		) {
+			throw new Error(`Result serializer module not found: ${serializerModuleName}`);
+		}
+
+		const serializerImport =
+			serializerModuleName === undefined
+				? ''
+				: `import __serializeResult from ${JSON.stringify(serializerModuleName)};`;
+
+		const finalOutputType = serializer?.outputType ?? outputType;
+
 		const executionCode = `
 			${additionalSourceFiles
 				.map(file => {
 					if (file.fileName.endsWith('.d.ts')) return '';
-					const filenameSansExt = removeExt(file.fileName);
-					return `import '${filenameSansExt}';`;
+					return `import ${JSON.stringify(removeExt(file.fileName))};`;
 				})
-				.join('\n  ')}
-      import defaultExport from '${USER_CODE_FILENAME}';
-            
-      declare global {
-        const __args: [${argsTypes.join(', ')}];
-        let __result: ${outputType} | Promise<${outputType}>;
-      }
-      __result = defaultExport(...__args);
-      
-      if ((__result as any) instanceof Promise) {
-      	__result = await __result;
-      }
-    `;
+				.join('\n')}
+		
+			${serializerImport}
+		
+			import defaultExport from ${JSON.stringify(USER_CODE_FILENAME)};
+			
+			declare global {
+				const __args: [${argsTypes.join(', ')}];
+				let __result: ${outputType} | Promise<${outputType}>;
+			}
+			let __finalResult: ${finalOutputType};
+			
+			__result = defaultExport(...__args);
+			if ((__result as any) instanceof Promise) {
+				__result = await __result;
+			}
+			const __resolvedResult: ${outputType} = await __result;
+			
+			__finalResult = ${serializer === undefined ? '__resolvedResult' : 'await __serializeResult(__resolvedResult)'};
+			(globalThis as any).__finalResult = __finalResult;
+		`;
 
 		const executionSourceFile = ts.createSourceFile(
 			EXECUTION_HARNESS_FILENAME,
@@ -77,16 +154,33 @@ export class UserCodeRunner {
 			ts.ScriptKind.TS,
 		);
 
-		const tsFileMap = new Map<string, ts.SourceFile>();
+		// Precompiled JavaScript bundles are runtime-only guest modules.
+		// They must bypass TypeScript compilation to avoid re-emission conflicts.
+		const isJavaScriptFile = (fileName: string): boolean => /\.[cm]?js$/.test(fileName);
+		const runtimeJavascriptFiles = additionalSourceFiles.filter(file => isJavaScriptFile(file.fileName));
 
-		tsFileMap.set(USER_CODE_FILENAME, userSourceFile);
-		tsFileMap.set(EXECUTION_HARNESS_FILENAME, executionSourceFile);
+		// TypeScript and declaration files remain in the virtual compiler program for
+		// type checking, transpilation, diagnostics, and source-map generation.
+		const typescriptSourceFiles = additionalSourceFiles.filter(file => !isJavaScriptFile(file.fileName));
 
-		for (const additionalSourceFile of additionalSourceFiles) {
-			tsFileMap.set(removeExt(additionalSourceFile.fileName), additionalSourceFile);
+		const tsFileMap = new Map<string, ts.SourceFile>([
+			[USER_CODE_FILENAME, userSourceFile],
+			[EXECUTION_HARNESS_FILENAME, executionSourceFile],
+		]);
+		for (const typescriptSourceFile of typescriptSourceFiles) {
+			tsFileMap.set(removeExt(typescriptSourceFile.fileName), typescriptSourceFile);
 		}
 
-		const jsFileMap = {} as { [key: string]: string };
+		// Seed the runtime module map with precompiled JS guest bundles unchanged.
+		const jsFileMap: Record<string, string> = {};
+		for (const file of runtimeJavascriptFiles) {
+			const moduleName = removeExt(file.fileName);
+			if (jsFileMap[moduleName] !== undefined) {
+				throw new Error(`Duplicate runtime module: ${moduleName}`);
+			}
+			jsFileMap[moduleName] = file.text;
+		}
+
 		let userCodeSourceMap: string;
 
 		const defaultCompilerHost = ts.createCompilerHost({});
@@ -110,15 +204,14 @@ export class UserCodeRunner {
 					if (removeExt(filenameSansExt) === USER_CODE_FILENAME) {
 						userCodeSourceMap = ts.createSourceFile(removeExt(filenameSansExt), data, ts.ScriptTarget.ESNext).text;
 					}
-				} else {
-					jsFileMap[filenameSansExt] = ts.createSourceFile(
-						filenameSansExt,
-						data,
-						ts.ScriptTarget.ESNext,
-						undefined,
-						ts.ScriptKind.JS,
-					).text;
+					return;
 				}
+				// Prevent emitted TypeScript from silently replacing a supplied runtime bundle.
+				if (jsFileMap[filenameSansExt] !== undefined) {
+					throw new Error(`Duplicate emitted module: ${filenameSansExt}`);
+				}
+				// Add transpiled (now JS) modules to the same map as the untouched precompiled JS bundles.
+				jsFileMap[filenameSansExt] = data;
 			},
 			readFile(fileName: string): string | undefined {
 				const filenameSansExt = removeExt(fileName);
@@ -134,12 +227,18 @@ export class UserCodeRunner {
 		};
 
 		const program = ts.createProgram(
-			[...additionalSourceFiles.map(f => f.fileName), EXECUTION_HARNESS_FILENAME],
+			[...typescriptSourceFiles.map(f => f.fileName), EXECUTION_HARNESS_FILENAME],
 			{
 				target: ts.ScriptTarget.ESNext,
 				module: ts.ModuleKind.ES2022,
 				lib: ['lib.esnext.d.ts'],
 				sourceMap: true,
+				// allow TS files OR pre-bundled JS files
+				allowJs: true,
+				checkJs: true,
+				// prevent pre-bundled JavaScript inputs from overwriting themselves
+				// The custom compiler host captures these virtual output paths in memory.
+				outDir: '__generated__',
 			},
 			customCompilerHost,
 		);
@@ -184,16 +283,18 @@ export class UserCodeRunner {
 		});
 	}
 
-	public async executeUserCode<ArgsType extends any[], ReturnType = any>(
+	public async executeUserCode<ArgsType extends unknown[], OutputType>(
 		userCode: string,
 		args: ArgsType,
-		outputType: string = 'any',
+		outputType = 'any',
 		argsTypes: string[] = ['any'],
-		timeout: number = 5000,
+		timeout = 5000,
 		additionalSourceFiles: ts.SourceFile[] = [],
-		context: vm.Context = vm.createContext(),
-	): Promise<Result<ReturnType, UserCodeError[]>> {
-		const result = await this.preProcess(userCode, outputType, argsTypes, additionalSourceFiles);
+		options: UserCodeExecutionOptions = {},
+	): Promise<Result<OutputType, UserCodeError[]>> {
+		const result = await this.preProcess(userCode, outputType, argsTypes, additionalSourceFiles, {
+			resultSerializer: options.resultSerializer,
+		});
 
 		if (result.isErr()) {
 			return result;
@@ -201,53 +302,86 @@ export class UserCodeRunner {
 
 		const { jsFileMap, userCodeSourceMap } = result.unwrap();
 
-		return this.executeUserCodeFromArtifacts(jsFileMap, userCodeSourceMap, args, timeout, context);
+		return this.executeUserCodeFromArtifacts<ArgsType, OutputType>(jsFileMap, userCodeSourceMap, args, timeout, {
+			globals: options.globals,
+			memoryLimitMb: options.memoryLimitMb,
+		});
 	}
 
-	public async executeUserCodeFromArtifacts<ArgsType extends any[], ReturnType = any>(
-		jsFileMap: { [key: string]: string },
+	public async executeUserCodeFromArtifacts<ArgsType extends unknown[], OutputType>(
+		jsFileMap: Record<string, string>,
 		sourceMap: string,
 		args: ArgsType,
-		timeout: number = 5000,
-		context: vm.Context = vm.createContext(),
-	): Promise<Result<ReturnType, UserCodeError[]>> {
-		// Put args and result into context
-		context.__args = args;
-		context.__result = undefined;
-
-		// Create modules for VM
-		const moduleCache = new Map<string, vm.Module>();
-		for (const [fileName, content] of Object.entries(jsFileMap)) {
-			moduleCache.set(
-				fileName,
-				new vm.SourceTextModule(content, {
-					identifier: fileName,
-					context,
-				}),
-			);
-		}
-		const harnessModule = moduleCache.get(EXECUTION_HARNESS_FILENAME)!;
-		await harnessModule.link(specifier => {
-			const filenameSansExt = removeExt(specifier);
-			if (moduleCache.has(filenameSansExt)) {
-				return moduleCache.get(filenameSansExt)!;
-			}
-			throw new Error(`Unable to resolve dependency: ${specifier}`);
+		timeout = 5000,
+		options: ArtifactExecutionOptions = {},
+	): Promise<Result<OutputType, UserCodeError[]>> {
+		const isolate = new ivm.Isolate({
+			memoryLimit: options.memoryLimitMb ?? 1024,
 		});
 
 		try {
-			await harnessModule.evaluate({
-				timeout,
+			const context = isolate.createContextSync();
+			const global = context.global;
+
+			// copy host values into the guest isolate so objects are guest-owned clones,
+			// not live host objects whose prototypes or constructors could expose host capabilities.
+			global.setSync('__args', args, { copy: true });
+			global.setSync('__result', undefined);
+			// global.setSync('__finalResult', undefined);
+
+			for (const [name, value] of Object.entries(options.globals ?? {})) {
+				if (name === '__args' || name === '__result' || name === '__finalResult') {
+					throw new Error(`Reserved global name: ${name}`);
+				}
+
+				global.setSync(name, value, { copy: true });
+			}
+
+			// Create modules for VM
+			const moduleCache = new Map<string, ivm.Module>();
+			for (const [fileName, content] of Object.entries(jsFileMap)) {
+				moduleCache.set(
+					fileName,
+					isolate.compileModuleSync(content, {
+						filename: fileName,
+					}),
+				);
+			}
+
+			// the harness module imports and invokes the user module,
+			// keeping execution and result capture inside the isolated context.
+			const harnessModule = moduleCache.get(EXECUTION_HARNESS_FILENAME);
+			if (harnessModule === undefined) {
+				throw new Error('Execution harness module is missing');
+			}
+
+			// recursively resolve & link the harness module’s imports
+			harnessModule.instantiateSync(context, specifier => {
+				// module names currently use a flat namespace; directory paths and extensions are discarded.
+				const module = moduleCache.get(removeExt(specifier));
+				if (module === undefined) {
+					throw new Error(`Unable to resolve dependency: ${specifier}`);
+				}
+				return module;
 			});
-			const result = context.__result;
-			delete context.__args;
-			delete context.__result;
-			return Result.Ok(result);
-		} catch (error: any) {
-			return Result.Err([UserCodeRuntimeError.new(error as Error, await new SourceMapConsumer(sourceMap))]);
+
+			// evaluate the resolved module
+			await harnessModule.evaluate({ timeout });
+			// copy guest results out as host-owned data; don't expose live guest reference.
+			const value = await global.get('__finalResult', { copy: true });
+
+			return Result.Ok(value as OutputType);
+		} catch (error) {
+			// errors from outside user code are "fatal" and will be re-thrown by new() to bubble up
+			const runtimeErr = UserCodeRuntimeError.new(error as Error, await new SourceMapConsumer(sourceMap));
+			// errors originating in user code are returned to the caller in a Result.Err
+			return Result.Err([runtimeErr]);
+		} finally {
+			isolate.dispose();
 		}
 	}
 }
+
 
 // Base error type for the User Code Runner
 export abstract class UserCodeError {
@@ -363,18 +497,11 @@ export class UserCodeRuntimeError extends UserCodeError {
 	private readonly sourceMap: SourceMapConsumer;
 	private readonly stackFrames: StackFrame[];
 
-	protected constructor(error: Error, sourceMap: SourceMapConsumer) {
+	protected constructor(error: Error, sourceMap: SourceMapConsumer, stackFrames: StackFrame[]) {
 		super();
 		this.error = error;
 		this.sourceMap = sourceMap;
-		this.stackFrames = parse(this.error);
-		const userCodeFrame = this.stackFrames.find(frame => frame.getFileName() === USER_CODE_FILENAME);
-		if (userCodeFrame === undefined) {
-			this.error.message =
-				'Error: Runtime error detected outside of user code execution path. This is most likely a bug in the additional library source.\nInherited from:\n' +
-				this.error.message;
-			throw this.error;
-		}
+		this.stackFrames = stackFrames;
 	}
 
 	public get message(): string {
@@ -422,7 +549,21 @@ export class UserCodeRuntimeError extends UserCodeError {
 	}
 
 	public static new(error: Error, sourceMap: SourceMapConsumer): UserCodeRuntimeError {
-		return new UserCodeRuntimeError(error, sourceMap);
+		const stackFrames = parse(error);
+		const userCodeFrame = stackFrames.find(frame => frame.getFileName() === USER_CODE_FILENAME);
+
+		if (userCodeFrame === undefined) {
+			// errors from *outside* user code are thrown instead of wrapped in a Result.Err(UserCodeRuntimeError)
+			error.message =
+				'Runtime error detected outside of user code execution path. ' +
+				'This is most likely a bug in the additional library source.\n' +
+				'Inherited from:\n' +
+				error.message;
+
+			throw error;
+		}
+
+		return new UserCodeRuntimeError(error, sourceMap, stackFrames);
 	}
 }
 
