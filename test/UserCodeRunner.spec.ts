@@ -444,44 +444,71 @@ describe('behavior', () => {
     expect(result.unwrap()).toBe('hello world');
   });
 
-  it('should accept additional source files', async () => {
-    const userCode = `
-    import { importedFunction } from 'other-importable';
+	it('should accept additional source files, and allow user code to import and invoke them', async () => {
+		const userCode = `
+			import { importedFunction } from 'other-importable';
+			export default function myDSLFunction(thing: string): string {
+				return importedFunction(thing + ' world');
+			}
+		`.trimTemplate();
+
+		const runner = new UserCodeRunner();
+
+		const result = await runner.executeUserCode(userCode, ['hello'], 'string', ['string'], 1000, [
+			ts.createSourceFile(
+				'other-importable.ts',
+				`
+          export function importedFunction(thing: string): string {
+            return thing + ' other';
+          }
+        `.trimTemplate(),
+				ts.ScriptTarget.ESNext,
+				true,
+			),
+		]);
+
+		expect(result.unwrap()).toBe('hello world other');
+	});
+
+	it('should reject function globals, since they are non-cloneable and cannot be safely passed in', async () => {
+		const userCode = `
     export default function myDSLFunction(thing: string): string {
-      return someGlobalFunction(thing) + importedFunction(' world');
+      return someGlobalFunction(thing);
     }
-    `.trimTemplate();
+  `.trimTemplate();
 
-    const runner = new UserCodeRunner();
+		const runner = new UserCodeRunner();
 
-    const result = await runner.executeUserCode(
-      userCode,
-      ['hello'],
-      'string',
-      ['string'],
-      1000,
-      [
-        ts.createSourceFile('globals.d.ts', `
-      declare global {
-        function someGlobalFunction(thing: string): string;
-      }
-      export {};
-      `.trimTemplate(), ts.ScriptTarget.ESNext, true),
-        ts.createSourceFile('other-importable.ts', `
-      export function importedFunction(thing: string): string {
-        return thing + ' other';
-      }
-      `.trimTemplate(), ts.ScriptTarget.ESNext, true)
-      ],
+		const resultPromise = runner.executeUserCode(
+			userCode,
+			['hello'],
+			'string',
+			['string'],
+			1000,
+			[
+				ts.createSourceFile(
+					'globals.d.ts',
+					`
+          declare global {
+            function someGlobalFunction(thing: string): string;
+          }
+          export {};
+        `.trimTemplate(),
+					ts.ScriptTarget.ESNext,
+					true,
+				),
+			],
 			{
 				globals: {
-					someGlobalFunction: (thing: string) => 'hello ' + thing, // Implementation injected to global namespace here
-				}
-			}
-    );
+					someGlobalFunction: (thing: string) => `hello ${thing}`,
+				},
+			},
+		);
 
-    expect(result.unwrap()).toBe('hello hello world other');
-  });
+		await expect(resultPromise).rejects.toThrow(
+			/Runtime error detected outside of user code execution path[\s\S]*could not be cloned/,
+		);
+	});
 
 	it('should serialize the result before copying it out, if serializer is provided', async () => {
 		const serializer = ts.createSourceFile(
@@ -556,7 +583,9 @@ describe('behavior', () => {
         ts.createSourceFile('activity-types.ts', activityTypes, ts.ScriptTarget.ESNext, true),
         ts.createSourceFile('TemporalPolyfillTypes.ts', temporalPolyfill, ts.ScriptTarget.ESNext, true),
       ],
-			{ globals: { Temporal } },
+			{
+				// globals: { Temporal }
+			},
     );
 
     expect(result.isErr()).toBeTruthy();

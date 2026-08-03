@@ -371,7 +371,10 @@ export class UserCodeRunner {
 
 			return Result.Ok(value as OutputType);
 		} catch (error) {
-			return Result.Err([UserCodeRuntimeError.new(error as Error, await new SourceMapConsumer(sourceMap))]);
+			// errors from outside user code are "fatal" and will be re-thrown by new() to bubble up
+			const runtimeErr = UserCodeRuntimeError.new(error as Error, await new SourceMapConsumer(sourceMap));
+			// errors originating in user code are returned to the caller in a Result.Err
+			return Result.Err([runtimeErr]);
 		} finally {
 			isolate.dispose();
 		}
@@ -493,18 +496,11 @@ export class UserCodeRuntimeError extends UserCodeError {
 	private readonly sourceMap: SourceMapConsumer;
 	private readonly stackFrames: StackFrame[];
 
-	protected constructor(error: Error, sourceMap: SourceMapConsumer) {
+	protected constructor(error: Error, sourceMap: SourceMapConsumer, stackFrames: StackFrame[]) {
 		super();
 		this.error = error;
 		this.sourceMap = sourceMap;
-		this.stackFrames = parse(this.error);
-		const userCodeFrame = this.stackFrames.find(frame => frame.getFileName() === USER_CODE_FILENAME);
-		if (userCodeFrame === undefined) {
-			this.error.message =
-				'Error: Runtime error detected outside of user code execution path. This is most likely a bug in the additional library source.\nInherited from:\n' +
-				this.error.message;
-			throw this.error;
-		}
+		this.stackFrames = stackFrames;
 	}
 
 	public get message(): string {
@@ -552,7 +548,21 @@ export class UserCodeRuntimeError extends UserCodeError {
 	}
 
 	public static new(error: Error, sourceMap: SourceMapConsumer): UserCodeRuntimeError {
-		return new UserCodeRuntimeError(error, sourceMap);
+		const stackFrames = parse(error);
+		const userCodeFrame = stackFrames.find(frame => frame.getFileName() === USER_CODE_FILENAME);
+
+		if (userCodeFrame === undefined) {
+			// errors from *outside* user code are thrown instead of wrapped in a Result.Err(UserCodeRuntimeError)
+			error.message =
+				'Runtime error detected outside of user code execution path. ' +
+				'This is most likely a bug in the additional library source.\n' +
+				'Inherited from:\n' +
+				error.message;
+
+			throw error;
+		}
+
+		return new UserCodeRuntimeError(error, sourceMap, stackFrames);
 	}
 }
 
