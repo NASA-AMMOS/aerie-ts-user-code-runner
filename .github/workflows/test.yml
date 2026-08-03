@@ -40,7 +40,7 @@ jobs:
         id: test
         env:
           NO_COLOR: 1
-        run: npm test:ci
+        run: npm run test:ci
 
       - name: Add Test Summary
         if: always()
