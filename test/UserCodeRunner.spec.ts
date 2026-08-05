@@ -20,16 +20,16 @@ describe('behavior', () => {
         return Object.keys(globalThis).join(',');
       }
       `.trimTemplate();
-  
+
       const runner = new UserCodeRunner();
-  
+
       const result = await runner.executeUserCode(
         userCode,
         [],
         'string',
         [],
       );
-  
+
       expect(result.isOk()).toBe(true);
       expect(result.unwrap()).toBe('__args,__result');
     });
@@ -132,7 +132,7 @@ describe('behavior', () => {
       subroutine();
       return thing + ' world';
     }
-    
+
     function subroutine() {
       throw new Error('This is a test error');
     }
@@ -186,7 +186,7 @@ describe('behavior', () => {
         export function throwingLibraryFunction(): void {
           throw new Error("Error in library code")
         }
-        
+
         Object.assign(globalThis, { throwingLibraryFunction });
         `.trimTemplate(), ts.ScriptTarget.ESNext, true),
       ],
@@ -212,7 +212,7 @@ describe('behavior', () => {
       subroutine();
       return thing + ' world';
     }
-    
+
     function subroutine() {
       throw new Error('This is a test error');
     }
@@ -247,7 +247,7 @@ describe('behavior', () => {
       subroutine();
       return thing + ' world';
     }
-    
+
     function subroutine() {
       throw new Error('This is a test error');
     }
@@ -282,7 +282,7 @@ describe('behavior', () => {
       subroutine();
       return thing + ' world';
     }
-    
+
     function subroutine() {
       throw new Error('This is a test error');
     }
@@ -317,7 +317,7 @@ describe('behavior', () => {
       subroutine();
       return thing + ' world';
     }
-    
+
     function subroutine() {
       throw new Error('This is a test error');
     }
@@ -354,7 +354,7 @@ describe('behavior', () => {
       subroutine();
       return thing + ' world';
     }
-    
+
     function subroutine() {
       throw new Error('This is a test error');
     }
@@ -588,7 +588,7 @@ describe('behavior', () => {
     const myExpansion = (props: ExpansionProps): ExpansionReturn => {
         const { activity } = props;
         const { biteSize } = activity.attributes.arguments;
-    
+
         return [
             AVS_DMP_ADC_SNAPSHOT(biteSize)
         ];
@@ -638,7 +638,7 @@ describe('behavior', () => {
     const myExpansion =  function(props: ExpansionProps): ExpansionReturn {
         const { activity } = props;
         const { biteSize } = activity.attributes.arguments;
-    
+
         return [
             AVS_DMP_ADC_SNAPSHOT(biteSize)
         ];
@@ -686,7 +686,7 @@ describe('behavior', () => {
     export default function MyDSLFunction(thing: string): string {
       return thing + ' world';
     }
-    
+
     throw new Error('This is a test error');
     `.trimTemplate();
 
@@ -782,7 +782,7 @@ This is a test error
       subroutine();
       return thing + ' world';
     }
-    
+
     function subroutine() {
       throw new Error('This is a test error');
     }
@@ -818,7 +818,7 @@ This is a test error
           await subroutine();
           return thing + ' world';
         }
-        
+
         async function subroutine() {
           throw new Error('This is a test error');
         }
@@ -872,7 +872,7 @@ This is a test error
         export function throwingLibraryFunction(): void {
           throw new Error("Error in library code")
         }
-        
+
         Object.assign(globalThis, { throwingLibraryFunction });
         `.trimTemplate(), ts.ScriptTarget.ESNext, true),
         ],
@@ -898,7 +898,7 @@ This is a test error
       subroutine();
       return thing + ' world';
     }
-    
+
     function subroutine() {
       throw new Error('This is a test error');
     }
@@ -933,7 +933,7 @@ This is a test error
       subroutine();
       return thing + ' world';
     }
-    
+
     function subroutine() {
       throw new Error('This is a test error');
     }
@@ -1053,7 +1053,7 @@ This is a test error
 });
 
 describe('regression tests', () => {
-  test('Aerie command expansion throw Regression Test', async () => {
+  test('PlanDev command expansion throw Regression Test', async () => {
     const userCode = `
     export default function SingleCommandExpansion(props: { activity: ActivityType }): Command {
       const duration = Temporal.Duration.from('PT1H');
@@ -1086,7 +1086,7 @@ describe('regression tests', () => {
 								return new Duration();
 							}
 						}
-	
+
 						Object.defineProperty(globalThis, 'Temporal', {
 							value: { Duration },
 							writable: false,
@@ -1105,7 +1105,7 @@ describe('regression tests', () => {
     });
   })
 
-  test('Aerie undefined node test', async () => {
+  test('PlanDev undefined node test', async () => {
     const userCode = `
     export default function BakeBananaBreadExpansionLogic(
       props: {
@@ -1186,7 +1186,7 @@ describe('regression tests', () => {
     });
   });
 
-  test('Aerie Scheduler test', async () => {
+  test('PlanDev Scheduler test', async () => {
     const userCode = `
   export default function myGoal() {
     return myHelper(ActivityTemplates.PeelBanana({
@@ -1245,7 +1245,7 @@ describe('regression tests', () => {
     });
   });
 
-  test('Aerie Scheduler TS2345 regression test', async () => {
+  test('PlanDev Scheduler TS2345 regression test', async () => {
     const userCode = `
   export default function myGoal() {
     return myHelper(ActivityTemplates.PeelBanana({ peelDirection: 'fromStem' }))
@@ -1294,7 +1294,7 @@ describe('regression tests', () => {
     });
   });
 
-  test("Aerie Scheduler wrong return type no annotation regression test", async () => {
+  test("PlanDev Scheduler wrong return type no annotation regression test", async () => {
     const userCode = `
   export default function myGoal<T>() {
     return 5
@@ -1454,7 +1454,7 @@ describe('regression tests', () => {
     });
   });
 
-  test('Aerie command expansion invalid count regression test', async () => {
+  test('PlanDev command expansion invalid count regression test', async () => {
     const userCode = `
     export default function SingleCommandExpansion(): ExpansionReturn {
       return DDM_CLOSE_OPEN_SELECT_DP;
@@ -1516,7 +1516,7 @@ describe('regression tests', () => {
     });
   });
 
-  test('Aerie scheduler unmapped harness error on missing property return type', async () => {
+  test('PlanDev scheduler unmapped harness error on missing property return type', async () => {
     const userCode = `
     interface FakeGoal {
       and(...others: FakeGoal[]): FakeGoal;
@@ -1568,7 +1568,7 @@ describe('regression tests', () => {
     });
   });
 
-  test('Aerie incorrect stack frame assumption regression test', async () => {
+  test('PlanDev incorrect stack frame assumption regression test', async () => {
     const userCode = `
       export default () => {
         return Real.Resource("state of charge").lessThan(0.3).split(0)
