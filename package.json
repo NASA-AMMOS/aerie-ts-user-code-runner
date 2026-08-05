@@ -1,11 +1,11 @@
 {
   "name": "@nasa-jpl/plandev-ts-user-code-runner",
-  "version": "1.0.0",
+  "version": "1.1.0-alpha.0",
   "description": "A simple way to safely run user code written in Typescript.",
-	"repository": {
-		"type": "git",
-		"url": "https://github.com/NASA-AMMOS/plandev-ts-user-code-runner"
-	},
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/NASA-AMMOS/plandev-ts-user-code-runner"
+  },
   "main": "build/UserCodeRunner.js",
   "type": "module",
   "license": "MIT",
