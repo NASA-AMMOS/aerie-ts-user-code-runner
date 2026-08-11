@@ -1,11 +1,11 @@
 {
   "name": "@nasa-jpl/aerie-ts-user-code-runner",
-  "version": "1.0.0-rc0",
+  "version": "1.0.0",
   "description": "A simple way to safely run user code written in Typescript.",
-	"repository": {
-		"type": "git",
-		"url": "https://github.com/NASA-AMMOS/aerie-ts-user-code-runner"
-	},
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/NASA-AMMOS/aerie-ts-user-code-runner"
+  },
   "main": "build/UserCodeRunner.js",
   "type": "module",
   "license": "MIT",
@@ -14,8 +14,8 @@
     "clean": "rm -rf build && rm -rf docs",
     "doc": "typedoc",
     "prepare": "npm run build && npm run doc",
-    "test": "node --no-node-snapshot --test --loader tsx `glob 'test/**/*.spec.ts'`",
-    "test:ci": "node --no-node-snapshot --test --loader tsx --test-reporter=spec --test-reporter=spec --test-reporter-destination=stdout --test-reporter-destination=test-output.txt `glob 'test/**/*.spec.ts'`",
+    "test": "node --no-node-snapshot --test --import tsx `glob 'test/**/*.spec.ts'`",
+    "test:ci": "node --no-node-snapshot --test --import tsx --test-reporter=spec --test-reporter=spec --test-reporter-destination=stdout --test-reporter-destination=test-output.txt `glob 'test/**/*.spec.ts'`",
     "watch": "tsc -p tsconfig.json --watch"
   },
   "engines": {
@@ -24,7 +24,7 @@
   "dependencies": {
     "isolated-vm": "6.0.2",
     "source-map": "^0.7.4",
-    "stack-trace": "^1.0.0-pre1"
+    "stack-trace": "1.0.0"
   },
   "peerDependencies": {
     "typescript": "4.x || 5.x"
@@ -36,13 +36,13 @@
     "expect": "^29",
     "glob": "^10",
     "prettier": "^2.7.1",
-    "tsx": "^3",
+    "tsx": "4.23.12",
     "typedoc": "^0.23.17",
     "typescript": "^5"
   },
   "allowScripts": {
-    "esbuild@0.18.20": true,
     "fsevents@2.3.3": true,
-    "isolated-vm@6.0.2": true
+    "isolated-vm@6.0.2": true,
+    "esbuild@0.28.2": true
   }
 }

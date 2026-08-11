@@ -21,29 +21,23 @@ Because this library uses `isolated-vm`, node.js must be started with the `--no-
 node --no-node-snapshot
 ```
 
-## Example
+## Limitations
 
-```ts
-import { UserCodeRunner } from './UserCodeRunner';
+This library uses the `isolated-vm` library to run user code in a protected sandbox context. This comes with some
+important limitations - specifically, only objects which are considered "transferable" may be passed into or out of the
+sandbox. As a rule of thumb, anything that can be `JSON.stringify`ed is "transferable". Notably, this does *not* include
+functions. If your user code takes *a function* as an input argument, or *returns* anything containing a function, it
+will not work with the isolated sandbox.
 
-const userCode = `
-  export default function MyDSLFunction(thing: string): string {
-    return thing + ' world';
-  }
-`;
+A few workarounds exist for common use cases:
+* If you are passing a function in order to provide a shared code library to users for use in their code - you can instead
+  provide it as a Typescript or JS source file in the `additionalFiles` array & expose it to users by adding it as a
+  property on the `globalThis` object if needed.
+* If you are expecting user code to return non-transferable objects/functions that are **transformable** to transferable
+  objects (such as an instance of a class that represents a serializable timestamp), you can provide a `resultSerializer`
+  function which will run on the results of user code, *inside* the sandbox, before returning to the caller. This allows
+  you to convert all unsafe objects to safe objects before returning them. See example below.
 
-const codeRunner = new UserCodeRunner();
-
-const result = await codeRunner.executeUserCode(
-        userCode, // Actual user code
-        ['hello'], // Input arguments
-        'string', // Return type
-        ['string'], // Argument types
-);
-
-expect(result.isOk()).toBeTruthy();
-expect(result.unwrap()).toBe('hello world');
-```
 
 ## Error Messages
 Error messaging is even more important when dealing with user code as you really need to guide the user to resolve any errors.
@@ -81,7 +75,7 @@ const userCode = `
   export default function MyDSLFunction(thing: string): string {
     return thing + ' world';
   }
-  `.trimTemplate();
+  `;
 
 const codeRunner = new UserCodeRunner();
 
@@ -96,14 +90,15 @@ expect(result.isOk()).toBeTruthy();
 expect(result.unwrap()).toBe('hello world');
 ```
 
-### Including other files for import, declaring some globals, and specified context
+### Including other files for import, limiting memory of user process
 ```ts
+import ts from "typescript";
 const userCode = `
   import { importedFunction } from 'other-importable';
   export default function myDSLFunction(thing: string): string {
-    return someGlobalFunction(thing) + otherFunction(' world');
+    return importedFunction(thing);
   }
-  `.trimTemplate();
+  `
 
 const codeRunner = new UserCodeRunner();
 
@@ -114,23 +109,61 @@ const result = await codeRunner.executeUserCode(
   ['string'],
   1000,
   [
-    ts.createSourceFile('globals.d.ts', `
-    declare global {
-      function someGlobalFunction(thing: string): string;
-    }
-    export {};
-    `.trimTemplate(), ts.ScriptTarget.ESNext, true),
     ts.createSourceFile('other-importable.ts', `
     export function importedFunction(thing: string): string {
       return thing + ' other';
     }
-    `.trimTemplate(), ts.ScriptTarget.ESNext, true)
+    `, ts.ScriptTarget.ESNext, true)
   ],
-  vm.createContext({
-    someGlobalFunction: (thing: string) => 'hello ' + thing, // Implementation injected to global namespace here
-  }),
+  { memoryLimitMb: 128 }
 );
 
 // expect(result.isOk()).toBeTruthy();
-expect(result.unwrap()).toBe('hello hello world other');
+expect(result.unwrap()).toBe('hello other');
+```
+
+## Using a Result Serializer
+In this case, the user code returns a function, which cannot be passed back outside the sandbox. Instead we provide a
+`resultSerializer` which transforms it to an object which can safely be serialized and passed back.
+
+```ts
+const serializer = ts.createSourceFile(
+  'result-serializer.ts',
+  `
+    export default function serializeResult(
+      result: { greet(name: string): string },
+    ): string {
+      return result.greet('world');
+    }
+  `,
+  ts.ScriptTarget.ESNext,
+  undefined,
+  ts.ScriptKind.TS,
+);
+
+const result = await new UserCodeRunner().executeUserCode<[], string>(
+  `
+    // user code
+    export default function() {
+      return {
+        greet(name: string): string {
+          return 'hello ' + name;
+        },
+      };
+    }
+  `,
+  [],
+  '{ greet(name: string): string }',
+  [],
+  1000,
+  [serializer],
+  {
+    resultSerializer: {
+      moduleName: 'result-serializer',
+      outputType: 'string',
+    },
+  },
+);
+
+expect(result.unwrap()).toBe('hello world');
 ```
