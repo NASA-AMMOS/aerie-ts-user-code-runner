@@ -47,5 +47,11 @@
   },
   "publishConfig": {
     "access": "public"
+  },
+  "devEngines": {
+    "packageManager": {
+      "name": "npm",
+      "onFail": "warn"
+    }
   }
 }
