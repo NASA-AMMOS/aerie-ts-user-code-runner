@@ -1,10 +1,10 @@
 {
-  "name": "@nasa-jpl/aerie-ts-user-code-runner",
-  "version": "1.0.0",
+  "name": "@nasa-jpl/plandev-ts-user-code-runner",
+  "version": "1.1.0",
   "description": "A simple way to safely run user code written in Typescript.",
   "repository": {
     "type": "git",
-    "url": "https://github.com/NASA-AMMOS/aerie-ts-user-code-runner"
+    "url": "https://github.com/NASA-AMMOS/plandev-ts-user-code-runner"
   },
   "main": "build/UserCodeRunner.js",
   "type": "module",
@@ -44,5 +44,14 @@
     "fsevents@2.3.3": true,
     "isolated-vm@6.0.2": true,
     "esbuild@0.28.2": true
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "devEngines": {
+    "packageManager": {
+      "name": "npm",
+      "onFail": "warn"
+    }
   }
 }
